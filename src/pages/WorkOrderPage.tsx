@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useDataMode } from "../context/DataModeContext";
-import { mockStaff } from "../data/mockStaff";
+import { mockStaff, type StaffMember } from "../data/mockStaff";
 import { mockWorkOrders, type WorkOrderItem } from "../data/mockWorkOrders";
 import { getLevelText } from "../utils/riskStyle";
 
@@ -18,6 +18,7 @@ export function WorkOrderPage() {
   const [selectedId, setSelectedId] = useState<string>(mockWorkOrders[0]?.work_order_id ?? "");
   const [detailOrder, setDetailOrder] = useState<WorkOrderItem | null>(null);
   const [assignOrder, setAssignOrder] = useState<WorkOrderItem | null>(null);
+  const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "system", text: "AI 处置助手已接入。选择左侧工单后，我会结合事件等级、道路状态和处置记录给出建议。" },
@@ -76,9 +77,11 @@ export function WorkOrderPage() {
         <div className="rail-title">
           <span>DISPATCH</span>
           <h1>工单处置中心</h1>
-          <div className="reference-chips vertical">
-            <span>FixMyStreet case flow</span>
-            <span>OpenRemote action/task</span>
+          <div className="bjtu-icons">
+            <div className="bjtu-letter bjtu-b">B</div>
+            <div className="bjtu-letter bjtu-j">J</div>
+            <div className="bjtu-letter bjtu-t">T</div>
+            <div className="bjtu-letter bjtu-u">U</div>
           </div>
         </div>
         <button className={filter === "unresolved" ? "active" : ""} onClick={() => setFilter("unresolved")}>
@@ -93,10 +96,26 @@ export function WorkOrderPage() {
         <div className="staff-roster">
           <strong>可派发人员</strong>
           {(demoDataEnabled ? mockStaff : []).map((staff) => (
-            <span key={staff.id}>
-              <i className={staff.status} />
-              {staff.name} · {staff.distance_km}km
-            </span>
+            <button
+              key={staff.id}
+              className="staff-item"
+              onClick={() => setSelectedStaff(staff)}
+            >
+              <div className={`staff-avatar ${staff.status}`}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="8" r="5"/>
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                </svg>
+              </div>
+              <div className="staff-info">
+                <span className="staff-name">{staff.name}</span>
+                <span className="staff-role">{staff.role}</span>
+              </div>
+              <div className="staff-meta">
+                <span className={`staff-status ${staff.status}`}>{staff.status === "idle" ? "空闲" : "忙碌"}</span>
+                <span className="staff-distance">{staff.distance_km}km</span>
+              </div>
+            </button>
           ))}
           {!demoDataEnabled ? <small>等待后端 GET /api/v1/staff 返回人员列表</small> : null}
         </div>
@@ -210,6 +229,13 @@ export function WorkOrderPage() {
           onClose={() => setDetailOrder(null)}
           onAssign={() => setAssignOrder(detailOrder)}
           onUpdate={(patch) => updateOrder(detailOrder.work_order_id, patch)}
+        />
+      ) : null}
+
+      {selectedStaff ? (
+        <StaffDetailModal
+          staff={selectedStaff}
+          onClose={() => setSelectedStaff(null)}
         />
       ) : null}
     </section>
@@ -331,4 +357,46 @@ function statusText(status: WorkOrderItem["status"]) {
     default:
       return "未知";
   }
+}
+
+function StaffDetailModal({ staff, onClose }: { staff: StaffMember; onClose: () => void }) {
+  return (
+    <div className="surveillance-modal-backdrop" onClick={onClose}>
+      <div className="staff-detail-modal" onClick={(event) => event.stopPropagation()}>
+        <button className="modal-x" onClick={onClose}>X</button>
+        <div className="staff-detail-header">
+          <div className={`staff-detail-avatar ${staff.status}`}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="8" r="5"/>
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            </svg>
+          </div>
+          <div className="staff-detail-info">
+            <h2>{staff.name}</h2>
+            <span className="staff-detail-role">{staff.role}</span>
+            <span className={`staff-detail-status ${staff.status}`}>
+              {staff.status === "idle" ? "空闲" : "忙碌"}
+            </span>
+          </div>
+        </div>
+        <div className="staff-detail-body">
+          <div className="staff-detail-row">
+            <span>人员编号</span>
+            <b>{staff.id}</b>
+          </div>
+          <div className="staff-detail-row">
+            <span>当前距离</span>
+            <b>{staff.distance_km} km</b>
+          </div>
+          <div className="staff-detail-row">
+            <span>状态说明</span>
+            <b>{staff.status === "idle" ? "可立即派发工单" : "正在处理其他任务"}</b>
+          </div>
+        </div>
+        <div className="staff-detail-actions">
+          <button onClick={onClose}>关闭</button>
+        </div>
+      </div>
+    </div>
+  );
 }

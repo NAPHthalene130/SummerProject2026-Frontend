@@ -22,8 +22,9 @@ export function HomePage() {
   const { demoDataEnabled } = useDataMode();
   const [mode, setMode] = useState<MapMode>("risk");
   const [modeOpen, setModeOpen] = useState(false);
-  const [assetOpen, setAssetOpen] = useState(true);
+  const [controlOpen, setControlOpen] = useState(false);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
+
   const nodes = demoDataEnabled ? scenario.nodes : [];
   const segments = demoDataEnabled ? scenario.segments : [];
   const cameras = demoDataEnabled ? scenario.cameras : [];
@@ -53,48 +54,40 @@ export function HomePage() {
         onBlankClick={closeModeMenu}
       />
 
-      <div className="map-title-float">
-        <span className="system-kicker">ROAD COMMAND</span>
-        <h1>智慧路政巡检分析系统</h1>
-        <p>{new Date().toLocaleString("zh-CN", { hour12: false })} · {mode === "risk" ? "事故风险模式" : "车流密度模式"}</p>
-        <div className="reference-chips">
-          <span>Traccar map-first</span>
-          <span>Kepler layer control</span>
-          <span>deck.gl layers</span>
+      <button
+        className={`earth-toolbar-toggle ${controlOpen ? "active" : ""}`}
+        onClick={() => setControlOpen((value) => !value)}
+        aria-label="展开地图工具"
+      >
+        ...
+      </button>
+
+      {controlOpen ? (
+        <div className="home-controls-drawer">
+          <MapModeSwitcher
+            mode={mode}
+            open={modeOpen}
+            onToggle={() => setModeOpen((value) => !value)}
+            onChange={(nextMode) => {
+              setMode(nextMode);
+              setModeOpen(false);
+            }}
+          />
+
+          {!demoDataEnabled ? <BackendWaitingNotice pageName="道路地图" /> : null}
+
+          <MapAssetDock
+            mode={mode}
+            segments={segments}
+            cameras={cameras}
+            selectedSegmentId={selectedSegmentId}
+            onSelectSegment={setSelectedSegmentId}
+          />
+
+          <MapLegend mode={mode} />
+          <MapEventNotification event={recentEvent} dangerCount={dangerCount} />
         </div>
-      </div>
-
-      <MapModeSwitcher
-        mode={mode}
-        open={modeOpen}
-        onToggle={() => setModeOpen((value) => !value)}
-        onChange={(nextMode) => {
-          setMode(nextMode);
-          setModeOpen(false);
-        }}
-      />
-
-      <div className="map-playback-float">
-        <button onClick={scenario.isPlaying ? scenario.pause : scenario.play}>{scenario.isPlaying ? "暂停" : "播放"}</button>
-        <button onClick={scenario.previous}>上一步</button>
-        <button onClick={scenario.next}>下一步</button>
-        <button onClick={scenario.reset}>重置</button>
-        <span>T+{scenario.currentTimeSec}s</span>
-      </div>
-
-      <MapLegend mode={mode} />
-      {!demoDataEnabled ? <BackendWaitingNotice pageName="道路地图" /> : null}
-      <MapEventNotification event={recentEvent} dangerCount={dangerCount} />
-
-      <MapAssetDock
-        open={assetOpen}
-        mode={mode}
-        segments={segments}
-        cameras={cameras}
-        selectedSegmentId={selectedSegmentId}
-        onToggle={() => setAssetOpen((value) => !value)}
-        onSelectSegment={setSelectedSegmentId}
-      />
+      ) : null}
 
       {selectedSegment ? (
         <SelectedRoadPopup
@@ -120,60 +113,51 @@ function BackendWaitingNotice({ pageName }: { pageName: string }) {
 }
 
 function MapAssetDock({
-  open,
   mode,
   segments,
   cameras,
   selectedSegmentId,
-  onToggle,
   onSelectSegment,
 }: {
-  open: boolean;
   mode: MapMode;
   segments: RoadSegment[];
   cameras: CameraPoint[];
   selectedSegmentId: string | null;
-  onToggle: () => void;
   onSelectSegment: (segmentId: string) => void;
 }) {
   const dangerCount = segments.filter((segment) => segment.status === "danger").length;
   const riskCount = segments.filter((segment) => segment.status === "risk").length;
 
   return (
-    <aside className={`map-asset-dock ${open ? "open" : "closed"}`}>
-      <button className="dock-tab" onClick={onToggle}>{open ? "收起资产" : "展开资产"}</button>
-      {open ? (
-        <>
-          <div className="dock-summary">
-            <span>道路资产</span>
-            <strong>{segments.length}</strong>
-            <i style={{ background: dangerCount ? "#EA4335" : "#34A853" }} />
-          </div>
-          <div className="dock-stats">
-            <b>{dangerCount}</b><span>严重异常</span>
-            <b>{riskCount}</b><span>高风险</span>
-            <b>{cameras.length}</b><span>摄像头</span>
-          </div>
-          <div className="dock-layer-chips">
-            <span className="active">RoadLayer</span>
-            <span>CameraLayer</span>
-            <span>EventLayer</span>
-          </div>
-          <div className="dock-road-list">
-            {segments.slice(0, 8).map((segment) => (
-              <button
-                key={segment.segment_id}
-                className={selectedSegmentId === segment.segment_id ? "active" : ""}
-                onClick={() => onSelectSegment(segment.segment_id)}
-              >
-                <i style={{ background: mode === "risk" ? getRiskColor(segment.status) : getTrafficFlowColor(segment.traffic_flow) }} />
-                <span>{segment.name}</span>
-                <b>{mode === "risk" ? getRiskText(segment.status) : segment.traffic_flow}</b>
-              </button>
-            ))}
-          </div>
-        </>
-      ) : null}
+    <aside className="map-asset-dock open">
+      <div className="dock-summary">
+        <span>道路资产</span>
+        <strong>{segments.length}</strong>
+        <i style={{ background: dangerCount ? "#EA4335" : "#34A853" }} />
+      </div>
+      <div className="dock-stats">
+        <b>{dangerCount}</b><span>严重异常</span>
+        <b>{riskCount}</b><span>高风险</span>
+        <b>{cameras.length}</b><span>摄像头</span>
+      </div>
+      <div className="dock-layer-chips">
+        <span className="active">RoadLayer</span>
+        <span>CameraLayer</span>
+        <span>EventLayer</span>
+      </div>
+      <div className="dock-road-list">
+        {segments.slice(0, 8).map((segment) => (
+          <button
+            key={segment.segment_id}
+            className={selectedSegmentId === segment.segment_id ? "active" : ""}
+            onClick={() => onSelectSegment(segment.segment_id)}
+          >
+            <i style={{ background: mode === "risk" ? getRiskColor(segment.status) : getTrafficFlowColor(segment.traffic_flow) }} />
+            <span>{segment.name}</span>
+            <b>{mode === "risk" ? getRiskText(segment.status) : segment.traffic_flow}</b>
+          </button>
+        ))}
+      </div>
     </aside>
   );
 }
@@ -453,7 +437,7 @@ function SelectedRoadPopup({
 }) {
   return (
     <div className="segment-float">
-      <button onClick={onClose}>×</button>
+      <button onClick={onClose}>x</button>
       <small>道路详情</small>
       <h2>{segment.name}</h2>
       <div className="segment-float-grid">
