@@ -3,13 +3,13 @@ import type { RoadSegment, RoadStatus } from "../data/standardRoadNetwork";
 export function getRoadColor(status: string): string {
   switch (status) {
     case "normal":
-      return "#2ecc71";
+      return "#34A853";
     case "busy":
-      return "#f1c40f";
+      return "#FBBC04";
     case "risk":
-      return "#e67e22";
+      return "#FF6D01";
     case "danger":
-      return "#e74c3c";
+      return "#EA4335";
     default:
       return "#95a5a6";
   }
@@ -20,10 +20,10 @@ export function getRiskColor(status: RoadStatus): string {
 }
 
 export function getTrafficFlowColor(flow: number): string {
-  if (flow <= 30) return "#2ecc71";
-  if (flow <= 60) return "#f1c40f";
-  if (flow <= 90) return "#e67e22";
-  return "#e74c3c";
+  if (flow <= 30) return "#34A853";
+  if (flow <= 60) return "#FBBC04";
+  if (flow <= 90) return "#FF6D01";
+  return "#EA4335";
 }
 
 export function getRiskText(status: string): string {
@@ -80,4 +80,10 @@ export function getRoadTypeText(roadType: RoadSegment["road_type"]): string {
     default:
       return "未知道路";
   }
+}
+
+export function getLevelText(level: "low" | "medium" | "high"): string {
+  if (level === "low") return "低等级";
+  if (level === "medium") return "中等级";
+  return "高等级";
 }

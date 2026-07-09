@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
-import { useScenarioPlayback } from "../hooks/useScenarioPlayback";
 import type { CameraPoint, RoadSegment } from "../data/standardRoadNetwork";
+import { mockMonitorVideos } from "../data/mockMonitorVideos";
+import { useDataMode } from "../context/DataModeContext";
+import { useScenarioPlayback } from "../hooks/useScenarioPlayback";
 import type { TrafficEvent } from "../types/business";
 import { getRiskColor, getRiskText, getTrafficFlowColor } from "../utils/riskStyle";
 
@@ -8,112 +10,122 @@ interface CameraView {
   camera: CameraPoint;
   segment: RoadSegment;
   events: TrafficEvent[];
+  channel: string;
+  streamLabel: string;
+  lastUpdate: string;
 }
+
+const PAGE_SIZE = 6;
 
 export function MonitorPage() {
   const scenario = useScenarioPlayback();
+  const { demoDataEnabled } = useDataMode();
+  const [page, setPage] = useState(0);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [activeCamera, setActiveCamera] = useState<CameraView | null>(null);
+
   const cameraViews = useMemo(() => {
+    if (!demoDataEnabled) return [];
     return scenario.cameras.flatMap((camera) => {
       const segment = scenario.segments.find((item) => item.segment_id === camera.segment_id);
-      if (!segment) return [];
+      const meta = mockMonitorVideos.find((item) => item.camera_id === camera.camera_id);
+      if (!segment || !meta) return [];
       return [{
         camera,
         segment,
         events: scenario.events.filter((event) => event.segment_id === segment.segment_id),
+        channel: meta.channel_no,
+        streamLabel: meta.stream_label,
+        lastUpdate: meta.last_update,
       }];
     });
-  }, [scenario.cameras, scenario.segments, scenario.events]);
+  }, [demoDataEnabled, scenario.cameras, scenario.events, scenario.segments]);
 
-  const stats = useMemo(() => {
-    const online = scenario.cameras.filter((camera) => camera.status === "online").length;
-    const highRisk = cameraViews.filter((view) => view.camera.status === "online" && (view.segment.status === "risk" || view.segment.status === "danger")).length;
-    const avgFlow = cameraViews.reduce((sum, view) => sum + view.segment.traffic_flow, 0) / cameraViews.length;
-    const avgSpeed = cameraViews.reduce((sum, view) => sum + view.segment.avg_speed, 0) / cameraViews.length;
-    const distribution = ["normal", "busy", "risk", "danger"].map((status) => ({
-      status,
-      count: cameraViews.filter((view) => view.segment.status === status).length,
-    }));
-    return {
-      online,
-      offline: scenario.cameras.length - online,
-      highRisk,
-      avgFlow,
-      avgSpeed,
-      distribution,
-    };
-  }, [cameraViews, scenario.cameras]);
+  const totalPages = Math.max(1, Math.ceil(cameraViews.length / PAGE_SIZE));
+  const pageItems = cameraViews.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  const wallStats = {
+    online: cameraViews.filter((view) => view.camera.status === "online").length,
+    danger: cameraViews.filter((view) => view.segment.status === "danger").length,
+    risk: cameraViews.filter((view) => view.segment.status === "risk").length,
+  };
 
   return (
-    <section className="business-page">
-      <div className="page-heading">
+    <section className="monitor-wall-page">
+      <div className="monitor-wall-header">
         <div>
-          <p className="eyebrow">WebRTC Monitor Mock</p>
-          <h1>多路视频监控页面</h1>
-          <p>当前使用 WebRTC Video Placeholder 模拟真实视频流，后续可替换为 WebRTC 播放组件。</p>
+          <span>VIDEO WALL</span>
+          <h1>道路监控视频墙</h1>
+          <div className="reference-chips">
+            <span>OpenRemote device status</span>
+            <span>ThingsBoard telemetry</span>
+          </div>
+        </div>
+        <div className="monitor-pager">
+          <button onClick={() => setPage((value) => Math.max(0, value - 1))}>上一组监控</button>
+          <strong>第 {page + 1} / {totalPages} 页</strong>
+          <button onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))}>下一组监控</button>
         </div>
       </div>
 
-      <div className="monitor-layout">
-        <div className="video-grid">
-          {cameraViews.map((view) => (
-            <button
-              key={view.camera.camera_id}
-              className="video-card"
-              style={{ borderColor: getCameraBorderColor(view) }}
-              onClick={() => setActiveCamera(view)}
-            >
-              <div className="video-meta">
-                <strong>{view.camera.name}</strong>
-                <span>{view.camera.camera_id} · {view.segment.name}</span>
+      <div className="monitor-system-strip">
+        <span><i className="blue" />在线通道 {wallStats.online}</span>
+        <span><i className="red" />事故告警 {wallStats.danger}</span>
+        <span><i className="orange" />高风险 {wallStats.risk}</span>
+        <span><i className="green" />WebRTC 模拟流稳定</span>
+      </div>
+
+      {demoDataEnabled ? (
+        <div className="monitor-wall-grid">
+        {pageItems.map((view) => (
+          <article
+            key={view.camera.camera_id}
+            className={`monitor-tile ${view.segment.status}`}
+            style={{ borderColor: getCameraBorderColor(view) }}
+          >
+            <button className="monitor-video" onClick={() => setActiveCamera(view)}>
+              <div className="video-scanline" />
+              <div className="signal-corner top-left" />
+              <div className="signal-corner top-right" />
+              <div className="signal-corner bottom-left" />
+              <div className="signal-corner bottom-right" />
+              <div className="live-badge">LIVE</div>
+              <div className="channel-badge">{view.channel}</div>
+              <div className="status-ribbon" style={{ background: getCameraBorderColor(view) }}>{getRiskText(view.segment.status)}</div>
+              <div className="mock-traffic-lines">
+                <i />
+                <i />
+                <i />
               </div>
-              <div className="video-placeholder">
-                <b>{view.camera.camera_id}</b>
-                <span>WebRTC Video Placeholder</span>
+              <div className="video-caption">
+                <b>{view.camera.name}</b>
+                <span>{view.segment.name}</span>
               </div>
-              <div className="video-stats">
-                <span>状态：{view.camera.status === "online" ? getRiskText(view.segment.status) : "摄像头离线"}</span>
-                <span>车流量：{view.segment.traffic_flow}</span>
-                <span>平均车速：{view.segment.avg_speed} km/h</span>
-                <span>风险等级：{view.segment.status}</span>
-              </div>
+              <em>{view.camera.status === "online" ? getRiskText(view.segment.status) : "离线"}</em>
             </button>
-          ))}
-        </div>
-
-        <aside className="business-side-panel">
-          <h2>数据报表预留区</h2>
-          <div className="summary-grid">
-            <div><span>在线摄像头数</span><strong>{stats.online}</strong></div>
-            <div><span>离线摄像头数</span><strong>{stats.offline}</strong></div>
-            <div><span>高风险监控数</span><strong>{stats.highRisk}</strong></div>
-            <div><span>平均车流量</span><strong>{stats.avgFlow.toFixed(1)}</strong></div>
-            <div><span>平均车速</span><strong>{stats.avgSpeed.toFixed(1)} km/h</strong></div>
-          </div>
-
-          <h3>风险等级分布</h3>
-          <div className="risk-bars">
-            {stats.distribution.map((item) => (
-              <div key={item.status}>
-                <span><i style={{ background: getRiskColor(item.status as RoadSegment["status"]) }} />{item.status}</span>
-                <strong>{item.count}</strong>
+            <div className="monitor-strip">
+              <span>车流 {view.segment.traffic_flow} 辆/min</span>
+              <span>均速 {view.segment.avg_speed} km/h</span>
+              <span>风险 {getRiskText(view.segment.status)}</span>
+              <button onClick={() => setExpandedId(expandedId === view.camera.camera_id ? null : view.camera.camera_id)}>详情</button>
+            </div>
+            {expandedId === view.camera.camera_id ? (
+              <div className="monitor-inline-detail">
+                <p>风险分数：{view.segment.risk_score}</p>
+                <p>关联道路：{view.segment.name}</p>
+                <p>最近事件：{view.events[0]?.description ?? "暂无异常事件"}</p>
+                <p>更新时间：{view.lastUpdate}</p>
               </div>
-            ))}
-          </div>
-
-          <h3>最近异常事件</h3>
-          <div className="side-list">
-            {scenario.events.length === 0 ? <p className="muted">当前无异常事件，播放场景后会出现事件。</p> : null}
-            {scenario.events.map((event) => (
-              <article className="event-item" key={event.event_id}>
-                <strong>{event.segment_name}</strong>
-                <span>{event.event_type} · {event.detected_by}</span>
-                <p>{event.description}</p>
-              </article>
-            ))}
-          </div>
-        </aside>
-      </div>
+            ) : null}
+          </article>
+        ))}
+        </div>
+      ) : (
+        <div className="monitor-empty-state">
+          <b>监控视频墙已切换为生产数据源</b>
+          <span>前端 mock 摄像头与 WebRTC 占位流已清空，等待后端摄像头列表与真实 WebRTC 信令接入。</span>
+          <small>双击左上角“路”字图标恢复演示监控数据。</small>
+        </div>
+      )}
 
       {activeCamera ? <MonitorModal view={activeCamera} onClose={() => setActiveCamera(null)} /> : null}
     </section>
@@ -128,28 +140,32 @@ function getCameraBorderColor(view: CameraView) {
 }
 
 function MonitorModal({ view, onClose }: { view: CameraView; onClose: () => void }) {
-  const latestEvent = view.events[0];
   const highRisk = view.segment.status === "risk" || view.segment.status === "danger";
+  const latestEvent = view.events[0];
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="monitor-modal" onClick={(event) => event.stopPropagation()}>
-        <button className="modal-close" onClick={onClose}>关闭</button>
-        <div className="large-video-placeholder">
-          <b>{view.camera.camera_id}</b>
-          <span>WebRTC Video Placeholder</span>
-          {highRisk ? <em>高风险警示</em> : null}
-        </div>
-        <div className="modal-info">
+    <div className="surveillance-modal-backdrop" onClick={onClose}>
+      <div className="surveillance-modal" onClick={(event) => event.stopPropagation()}>
+        <button className="modal-x" onClick={onClose}>X</button>
+        {highRisk ? <div className="risk-warning">当前监控存在高风险异常，请及时处理</div> : null}
+        <div className="modal-video-stage" style={{ borderColor: getRiskColor(view.segment.status) }}>
+          <div className="video-scanline" />
+          <div className="live-badge">LIVE</div>
           <h2>{view.camera.name}</h2>
-          <p>{view.segment.name}</p>
-          <div className="summary-grid">
-            <div><span>当前车流量</span><strong>{view.segment.traffic_flow}</strong></div>
-            <div><span>平均车速</span><strong>{view.segment.avg_speed} km/h</strong></div>
-            <div><span>风险等级</span><strong>{getRiskText(view.segment.status)}</strong></div>
-            <div><span>最近事件</span><strong>{latestEvent ? latestEvent.event_type : "暂无"}</strong></div>
-          </div>
-          {latestEvent ? <p className="modal-desc">{latestEvent.description}</p> : null}
+          <p>{view.streamLabel} · {view.channel}</p>
+          <span>WebRTC Video Placeholder</span>
+        </div>
+        <div className="modal-video-info">
+          <div><span>道路名称</span><b>{view.segment.name}</b></div>
+          <div><span>当前状态</span><b>{getRiskText(view.segment.status)}</b></div>
+          <div><span>车流量</span><b>{view.segment.traffic_flow} 辆/min</b></div>
+          <div><span>平均车速</span><b>{view.segment.avg_speed} km/h</b></div>
+          <div><span>风险等级</span><b>{view.segment.status}</b></div>
+          <div><span>最近异常</span><b>{latestEvent ? latestEvent.description : "暂无"}</b></div>
+        </div>
+        <div className="modal-exit-row">
+          <button onClick={onClose}>退出放大</button>
+          <button onClick={onClose}>关闭</button>
         </div>
       </div>
     </div>

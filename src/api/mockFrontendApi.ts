@@ -1,4 +1,4 @@
-import { mockFrontendEvents, mockWorkOrders, type FrontendWorkOrder } from "../data/mockWorkOrders";
+import { mockFrontendEvents, mockWorkOrders, type WorkOrderItem } from "../data/mockWorkOrders";
 import { standardCameraPoints, standardRoadNodes, standardRoadSegments } from "../data/standardRoadNetwork";
 
 function clone<T>(value: T): T {
@@ -53,8 +53,9 @@ export async function fetchWorkOrders() {
 // Later replace with: PUT /api/v1/work-orders/{order_id}/feedback
 export async function updateWorkOrderStatus(
   workOrderId: string,
-  status: FrontendWorkOrder["status"],
-  workOrders: FrontendWorkOrder[],
+  status: WorkOrderItem["status"],
+  workOrders: WorkOrderItem[],
+  assignee?: string,
 ) {
   return wait(
     workOrders.map((order) =>
@@ -62,11 +63,18 @@ export async function updateWorkOrderStatus(
         ? {
             ...order,
             status,
-            assignee: status === "pending" ? order.assignee : "路政巡检一组",
-            completed_at: status === "completed" ? new Date().toLocaleString("zh-CN", { hour12: false }) : order.completed_at,
-            completed_by: status === "completed" ? "路政巡检一组" : order.completed_by,
-            feedback_message: status === "completed" ? order.feedback_message ?? "已完成现场处置，交通状态恢复观察中。" : order.feedback_message,
-            feedback_images: status === "completed" ? order.feedback_images ?? ["https://placehold.co/300x180?text=Feedback+Image"] : order.feedback_images,
+            assignee: assignee ?? order.assignee,
+            completed_at: status === "completed" || status === "false_alarm"
+              ? new Date().toLocaleString("zh-CN", { hour12: false })
+              : order.completed_at,
+            process_message: status === "completed"
+              ? order.process_message ?? "现场处置完成，道路状态恢复观察中。"
+              : status === "false_alarm"
+                ? order.process_message ?? "经人工复核，该事件为误报，已关闭。"
+                : order.process_message,
+            process_images: status === "completed" || status === "false_alarm"
+              ? order.process_images ?? ["https://placehold.co/640x360/263d32/f4f8ff?text=Process+Image"]
+              : order.process_images,
           }
         : order,
     ),

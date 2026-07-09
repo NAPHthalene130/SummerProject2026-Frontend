@@ -28,19 +28,8 @@ const accidentEvent: TrafficEvent = {
   timestamp_sec: 15,
 };
 
-const congestionEvent: TrafficEvent = {
-  event_id: "evt_002",
-  segment_id: "seg_innov_e",
-  segment_name: "创新路施工拥堵段",
-  event_type: "construction",
-  severity: "medium",
-  description: "施工围挡导致创新路东段排队长度增加，建议巡检人员关注绕行提示。",
-  detected_by: "RuleEngine",
-  timestamp_sec: 20,
-};
-
 const coreRiskEvent: TrafficEvent = {
-  event_id: "evt_003",
+  event_id: "evt_002",
   segment_id: "seg_tech_e",
   segment_name: "科技大道核心路口东段",
   event_type: "congestion",
@@ -50,7 +39,7 @@ const coreRiskEvent: TrafficEvent = {
   timestamp_sec: 10,
 };
 
-const accidentWorkOrder: WorkOrder = {
+const workOrder: WorkOrder = {
   work_order_id: "wo_001",
   event_id: "evt_001",
   title: "高新一路事故高发段异常事件处置工单",
@@ -63,7 +52,7 @@ const accidentWorkOrder: WorkOrder = {
 export const scenarioTimeline: ScenarioStep[] = [
   {
     time_sec: 0,
-    description: "T0 00s：所有道路正常，科技大道车流略高。",
+    description: "所有道路进入监控态势，科技大道车流略高。",
     updates: [
       { segment_id: "seg_tech_w", status: "normal", traffic_flow: 68, avg_speed: 52, risk_score: 0.3 },
       { segment_id: "seg_tech_e", status: "normal", traffic_flow: 70, avg_speed: 50, risk_score: 0.34 },
@@ -71,7 +60,7 @@ export const scenarioTimeline: ScenarioStep[] = [
   },
   {
     time_sec: 5,
-    description: "T1 05s：学院路车流升高，状态变为 busy。",
+    description: "学院路早高峰车流升高，园区入口进入忙碌状态。",
     updates: [
       { segment_id: "seg_academy_w", status: "busy", traffic_flow: 78, avg_speed: 28, risk_score: 0.48 },
       { segment_id: "seg_academy_e", status: "busy", traffic_flow: 72, avg_speed: 30, risk_score: 0.45 },
@@ -79,7 +68,7 @@ export const scenarioTimeline: ScenarioStep[] = [
   },
   {
     time_sec: 10,
-    description: "T2 10s：科技大道核心路口平均车速下降，状态变为 risk。",
+    description: "科技大道核心路口平均车速下降，触发风险研判。",
     updates: [
       { segment_id: "seg_tech_e", status: "risk", traffic_flow: 94, avg_speed: 18, risk_score: 0.72 },
       { segment_id: "seg_cloud_n", status: "busy", traffic_flow: 76, avg_speed: 32, risk_score: 0.5 },
@@ -88,42 +77,41 @@ export const scenarioTimeline: ScenarioStep[] = [
   },
   {
     time_sec: 15,
-    description: "T3 15s：高新一路发生疑似追尾事故，状态变为 danger，生成异常事件和工单。",
+    description: "高新一路发生疑似追尾事故，系统生成异常事件与工单。",
     updates: [
       { segment_id: "seg_gaoxin_1", status: "danger", traffic_flow: 112, avg_speed: 7, risk_score: 0.96 },
     ],
     events: [accidentEvent],
-    workOrders: [accidentWorkOrder],
+    workOrders: [workOrder],
   },
   {
     time_sec: 20,
-    description: "T4 20s：事故持续，周边两条道路变为 busy。",
+    description: "事故持续，创新路与智能北街出现连带拥堵。",
     updates: [
       { segment_id: "seg_innov_e", status: "busy", traffic_flow: 88, avg_speed: 24, risk_score: 0.58 },
       { segment_id: "seg_smart_s", status: "busy", traffic_flow: 64, avg_speed: 26, risk_score: 0.52 },
     ],
-    events: [congestionEvent],
   },
   {
     time_sec: 25,
-    description: "T5 25s：道路管理员接单，工单状态变为 processing。",
+    description: "道路管理员接单，处置工单转为处理中。",
     updates: [
       { segment_id: "seg_gaoxin_1", status: "danger", traffic_flow: 98, avg_speed: 10, risk_score: 0.9 },
     ],
-    workOrders: [{ ...accidentWorkOrder, status: "processing", assignee: "路政巡检一组" }],
+    workOrders: [{ ...workOrder, status: "processing", assignee: "路政巡检一组" }],
   },
   {
     time_sec: 30,
-    description: "T6 30s：事故处理完成，高新一路状态从 danger 降为 risk。",
+    description: "事故初步处理完成，高新一路从严重异常降为高风险。",
     updates: [
       { segment_id: "seg_gaoxin_1", status: "risk", traffic_flow: 70, avg_speed: 24, risk_score: 0.66 },
       { segment_id: "seg_innov_e", status: "busy", traffic_flow: 76, avg_speed: 29, risk_score: 0.5 },
     ],
-    workOrders: [{ ...accidentWorkOrder, status: "processing", assignee: "路政巡检一组" }],
+    workOrders: [{ ...workOrder, status: "processing", assignee: "路政巡检一组" }],
   },
   {
     time_sec: 35,
-    description: "T7 35s：道路逐步恢复，工单状态变为 completed。",
+    description: "道路逐步恢复，事故工单完成归档。",
     updates: [
       { segment_id: "seg_gaoxin_1", status: "normal", traffic_flow: 46, avg_speed: 42, risk_score: 0.38 },
       { segment_id: "seg_tech_e", status: "normal", traffic_flow: 68, avg_speed: 48, risk_score: 0.34 },
@@ -133,21 +121,19 @@ export const scenarioTimeline: ScenarioStep[] = [
       { segment_id: "seg_smart_s", status: "normal", traffic_flow: 28, avg_speed: 33, risk_score: 0.23 },
       { segment_id: "seg_cloud_n", status: "normal", traffic_flow: 54, avg_speed: 51, risk_score: 0.31 },
     ],
-    workOrders: [{ ...accidentWorkOrder, status: "completed", assignee: "路政巡检一组" }],
+    workOrders: [{ ...workOrder, status: "completed", assignee: "路政巡检一组" }],
   },
 ];
 
 export function applyScenarioSteps(baseSegments: RoadSegment[], stepIndex: number): RoadSegment[] {
   const cloned = baseSegments.map((segment) => ({ ...segment, camera_ids: [...segment.camera_ids] }));
   const byId = new Map(cloned.map((segment) => [segment.segment_id, segment]));
-
   scenarioTimeline.slice(0, stepIndex + 1).forEach((step) => {
     step.updates.forEach((update) => {
       const segment = byId.get(update.segment_id);
       if (segment) Object.assign(segment, update);
     });
   });
-
   return cloned;
 }
 
