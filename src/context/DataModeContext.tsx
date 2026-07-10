@@ -7,12 +7,12 @@ interface DataModeContextValue {
 
 const DataModeContext = createContext<DataModeContextValue | null>(null);
 
-const STORAGE_KEY = "smart-road-demo-data-enabled";
+const STORAGE_KEY = "smart-road-demo-data-enabled-v2";
 
 export function DataModeProvider({ children }: { children: ReactNode }) {
   const [demoDataEnabled, setDemoDataEnabled] = useState(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored !== "false";
+    return stored === "true";
   });
 
   useEffect(() => {
