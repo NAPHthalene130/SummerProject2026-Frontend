@@ -15,6 +15,18 @@ export interface LiveOfferResponse {
   type: string;
 }
 
+export interface RiskDetail {
+  risk_score: number;
+  vehicle_count: number;
+  max_vehicle_risk: number;
+  min_vehicle_risk: number;
+}
+
+export interface RisksResponse {
+  camera_risks: Record<string, number>;
+  detailed: Record<string, RiskDetail>;
+}
+
 class ApiError extends Error {
   constructor(
     public status: number,
@@ -36,6 +48,10 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function fetchCameras(): Promise<BackendCamera[]> {
   return request<BackendCamera[]>("/api/v1/cameras/");
+}
+
+export function fetchRisks(): Promise<RisksResponse> {
+  return request<RisksResponse>("/api/v1/risks/");
 }
 
 export function postLiveOffer(cameraId: string, body: LiveOfferRequest): Promise<LiveOfferResponse> {

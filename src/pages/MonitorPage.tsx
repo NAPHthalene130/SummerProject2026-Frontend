@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CameraPoint, RoadSegment } from "../data/standardRoadNetwork";
-import { mockMonitorVideos } from "../data/mockMonitorVideos";
 import { useDataMode } from "../context/DataModeContext";
 import { useScenarioPlayback } from "../hooks/useScenarioPlayback";
 import type { TrafficEvent } from "../types/business";
@@ -82,18 +81,17 @@ export function MonitorPage() {
 
   const demoViews = useMemo(() => {
     if (!demoDataEnabled) return [];
-    return scenario.cameras.flatMap((camera) => {
-      const segment = scenario.segments.find((item) => item.segment_id === camera.segment_id);
-      const meta = mockMonitorVideos.find((item) => item.camera_id === camera.camera_id);
-      if (!segment || !meta) return [];
-      return [{
+    return scenario.cameras.map((camera, index) => {
+      const segment = scenario.segments.find((s) => s.camera_ids.includes(camera.camera_id)) ?? null;
+      const channelNum = String(index + 1).padStart(2, "0");
+      return {
         camera,
         segment,
-        events: scenario.events.filter((event) => event.segment_id === segment.segment_id),
-        channel: meta.channel_no,
-        streamLabel: meta.stream_label,
-        lastUpdate: meta.last_update,
-      }];
+        events: segment ? scenario.events.filter((event) => event.segment_id === segment.segment_id) : [],
+        channel: `CH-${channelNum}`,
+        streamLabel: camera.name,
+        lastUpdate: "实时",
+      };
     });
   }, [demoDataEnabled, scenario.cameras, scenario.events, scenario.segments]);
 
