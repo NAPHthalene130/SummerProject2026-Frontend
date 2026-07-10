@@ -1,3 +1,6 @@
+import type { StaffMember } from "../data/mockStaff";
+import type { WorkOrderItem } from "../data/mockWorkOrders";
+
 export interface BackendCamera {
   id: string;
   name: string;
@@ -54,6 +57,37 @@ export function fetchCameraStats(): Promise<CameraStatsResponse> {
 export function postLiveOffer(cameraId: string, body: LiveOfferRequest): Promise<LiveOfferResponse> {
   return request<LiveOfferResponse>(`/api/v1/live/${cameraId}/offer`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function fetchWorkOrders(): Promise<WorkOrderItem[]> {
+  return request<WorkOrderItem[]>("/api/v1/work-orders/");
+}
+
+export function fetchStaff(): Promise<StaffMember[]> {
+  return request<StaffMember[]>("/api/v1/staff/");
+}
+
+export function dispatchWorkOrder(workOrderId: string, userId: string): Promise<WorkOrderItem> {
+  return request<WorkOrderItem>(`/api/v1/work-orders/${encodeURIComponent(workOrderId)}/dispatch`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: Number(userId) }),
+  });
+}
+
+export function updateWorkOrderStatus(
+  workOrderId: string,
+  body: {
+    status: WorkOrderItem["status"];
+    process_message?: string;
+    process_image_url?: string;
+  },
+): Promise<WorkOrderItem> {
+  return request<WorkOrderItem>(`/api/v1/work-orders/${encodeURIComponent(workOrderId)}/status`, {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

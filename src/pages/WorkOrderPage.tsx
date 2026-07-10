@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { dispatchWorkOrder, fetchStaff, fetchWorkOrders, updateWorkOrderStatus } from "../api/client";
 import { useDataMode } from "../context/DataModeContext";
 import { mockStaff, type StaffMember } from "../data/mockStaff";
 import { mockWorkOrders, type WorkOrderItem } from "../data/mockWorkOrders";
@@ -14,32 +15,65 @@ interface ChatMessage {
 export function WorkOrderPage() {
   const { demoDataEnabled } = useDataMode();
   const [orders, setOrders] = useState<WorkOrderItem[]>(mockWorkOrders);
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(mockStaff);
   const [filter, setFilter] = useState<FilterKey>("unresolved");
   const [selectedId, setSelectedId] = useState<string>(mockWorkOrders[0]?.work_order_id ?? "");
   const [detailOrder, setDetailOrder] = useState<WorkOrderItem | null>(null);
   const [assignOrder, setAssignOrder] = useState<WorkOrderItem | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "system", text: "AI 处置助手已接入。选择左侧工单后，我会结合事件等级、道路状态和处置记录给出建议。" },
   ]);
 
   useEffect(() => {
+    let cancelled = false;
+
     if (demoDataEnabled) {
       setOrders(mockWorkOrders);
+      setStaffMembers(mockStaff);
       setSelectedId(mockWorkOrders[0]?.work_order_id ?? "");
+      setLoading(false);
+      setLoadError("");
       setMessages([
         { role: "system", text: "AI 处置助手已接入。选择工单后，我会结合事件等级、道路状态和处置记录给出建议。" },
       ]);
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
-    setOrders([]);
-    setSelectedId("");
+
+    setLoading(true);
+    setLoadError("");
     setDetailOrder(null);
     setAssignOrder(null);
     setMessages([
-      { role: "system", text: "生产数据源模式：前端 mock 工单与派发人员已清空，等待后端工单接口和智能体服务接入。" },
+      { role: "system", text: "生产数据源模式：正在读取后端工单、人员和派发记录。" },
     ]);
+
+    Promise.all([fetchWorkOrders(), fetchStaff()])
+      .then(([workOrders, staff]) => {
+        if (cancelled) return;
+        setOrders(workOrders);
+        setStaffMembers(staff);
+        setSelectedId(workOrders[0]?.work_order_id ?? "");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setOrders([]);
+        setStaffMembers([]);
+        setSelectedId("");
+        setLoadError(error instanceof Error ? error.message : "后端工单数据加载失败");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [demoDataEnabled]);
 
   const selectedOrder = orders.find((order) => order.work_order_id === selectedId) ?? orders[0] ?? null;
@@ -59,6 +93,61 @@ export function WorkOrderPage() {
     setOrders((previous) => previous.map((order) => order.work_order_id === id ? { ...order, ...patch } : order));
     setDetailOrder((current) => current?.work_order_id === id ? { ...current, ...patch } : current);
     setAssignOrder((current) => current?.work_order_id === id ? { ...current, ...patch } : current);
+  };
+
+  const replaceOrder = (order: WorkOrderItem) => {
+    setOrders((previous) => previous.map((item) => item.work_order_id === order.work_order_id ? order : item));
+    setDetailOrder((current) => current?.work_order_id === order.work_order_id ? order : current);
+    setAssignOrder((current) => current?.work_order_id === order.work_order_id ? order : current);
+  };
+
+  const refreshStaff = () => {
+    if (demoDataEnabled) return;
+    fetchStaff()
+      .then(setStaffMembers)
+      .catch(() => undefined);
+  };
+
+  const handleAssignOrder = (order: WorkOrderItem, staff: StaffMember) => {
+    if (demoDataEnabled) {
+      updateOrder(order.work_order_id, { assignee: staff.name, status: "pending" });
+      setSelectedId(order.work_order_id);
+      setAssignOrder(null);
+      return;
+    }
+
+    dispatchWorkOrder(order.work_order_id, staff.id)
+      .then((updatedOrder) => {
+        setLoadError("");
+        replaceOrder(updatedOrder);
+        setSelectedId(updatedOrder.work_order_id);
+        setAssignOrder(null);
+        refreshStaff();
+      })
+      .catch((error) => {
+        setLoadError(error instanceof Error ? error.message : "派发工单失败");
+      });
+  };
+
+  const handleUpdateOrder = (id: string, patch: Partial<WorkOrderItem>) => {
+    if (demoDataEnabled || !patch.status) {
+      updateOrder(id, patch);
+      return;
+    }
+
+    updateWorkOrderStatus(id, {
+      status: patch.status,
+      process_message: patch.process_message,
+      process_image_url: patch.process_images?.[0],
+    })
+      .then((updatedOrder) => {
+        setLoadError("");
+        replaceOrder(updatedOrder);
+        refreshStaff();
+      })
+      .catch((error) => {
+        setLoadError(error instanceof Error ? error.message : "更新工单状态失败");
+      });
   };
 
   const askAgent = (question: string) => {
@@ -95,7 +184,7 @@ export function WorkOrderPage() {
         </button>
         <div className="staff-roster">
           <strong>可派发人员</strong>
-          {(demoDataEnabled ? mockStaff : []).map((staff) => (
+          {staffMembers.map((staff) => (
             <button
               key={staff.id}
               className="staff-item"
@@ -117,7 +206,7 @@ export function WorkOrderPage() {
               </div>
             </button>
           ))}
-          {!demoDataEnabled ? <small>等待后端 GET /api/v1/staff 返回人员列表</small> : null}
+          {!loading && staffMembers.length === 0 ? <small>暂无可派发人员</small> : null}
         </div>
       </aside>
 
@@ -127,7 +216,7 @@ export function WorkOrderPage() {
             <span>WORK ORDERS</span>
             <h2>{filter === "unresolved" ? "未解决工单流" : filter === "completed" ? "已解决归档" : "全部工单"}</h2>
           </div>
-          <button onClick={() => selectedOrder && setAssignOrder(selectedOrder)}>派发当前工单</button>
+          <button disabled={!selectedOrder} onClick={() => selectedOrder && setAssignOrder(selectedOrder)}>派发当前工单</button>
         </div>
         <div className="dispatch-process-map">
           {[
@@ -144,11 +233,25 @@ export function WorkOrderPage() {
           ))}
         </div>
         <div className="dispatch-stream">
-          {!demoDataEnabled ? (
+          {!demoDataEnabled && loading ? (
             <div className="dispatch-empty-state">
-              <b>工单中心已切换为生产数据源</b>
-              <span>前端 mock 工单、事件和派发人员已清空，等待后端 REST API 返回真实数据。</span>
-              <small>预留接口：GET /api/v1/work-orders、GET /api/v1/staff、PUT /api/v1/work-orders/{'{order_id}'}/dispatch</small>
+              <b>正在读取后端工单</b>
+              <span>正在加载数据库中的模拟工单、派发人员和处置记录。</span>
+              <small>GET /api/v1/work-orders · GET /api/v1/staff</small>
+            </div>
+          ) : null}
+          {!demoDataEnabled && loadError ? (
+            <div className="dispatch-empty-state">
+              <b>后端工单加载失败</b>
+              <span>{loadError}</span>
+              <small>请确认 Backend 已启动并且 MySQL 可连接。</small>
+            </div>
+          ) : null}
+          {!loading && !loadError && filteredOrders.length === 0 ? (
+            <div className="dispatch-empty-state">
+              <b>暂无匹配工单</b>
+              <span>{demoDataEnabled ? "当前筛选条件下没有 mock 工单。" : "数据库中暂无当前筛选条件下的工单。"}</span>
+              <small>可切换筛选条件查看全部工单。</small>
             </div>
           ) : null}
           {filteredOrders.map((order) => (
@@ -172,7 +275,7 @@ export function WorkOrderPage() {
               </div>
               <div className="row-actions">
                 {order.status === "unassigned" ? <button onClick={(event) => { event.stopPropagation(); setAssignOrder(order); }}>派发</button> : null}
-                {order.status === "pending" ? <button onClick={(event) => { event.stopPropagation(); updateOrder(order.work_order_id, { status: "processing" }); }}>标记处理中</button> : null}
+                {order.status === "pending" ? <button onClick={(event) => { event.stopPropagation(); handleUpdateOrder(order.work_order_id, { status: "processing" }); }}>标记处理中</button> : null}
                 {order.status !== "completed" && order.status !== "false_alarm" ? <button onClick={(event) => { event.stopPropagation(); setDetailOrder(order); }}>处置详情</button> : null}
                 <button onClick={(event) => { event.stopPropagation(); setDetailOrder(order); }}>查看</button>
               </div>
@@ -214,12 +317,9 @@ export function WorkOrderPage() {
       {assignOrder ? (
         <AssignDialog
           order={assignOrder}
+          staffMembers={staffMembers}
           onClose={() => setAssignOrder(null)}
-          onConfirm={(name) => {
-            updateOrder(assignOrder.work_order_id, { assignee: name, status: "pending" });
-            setSelectedId(assignOrder.work_order_id);
-            setAssignOrder(null);
-          }}
+          onConfirm={(staff) => handleAssignOrder(assignOrder, staff)}
         />
       ) : null}
 
@@ -228,7 +328,7 @@ export function WorkOrderPage() {
           order={detailOrder}
           onClose={() => setDetailOrder(null)}
           onAssign={() => setAssignOrder(detailOrder)}
-          onUpdate={(patch) => updateOrder(detailOrder.work_order_id, patch)}
+          onUpdate={(patch) => handleUpdateOrder(detailOrder.work_order_id, patch)}
         />
       ) : null}
 
@@ -242,8 +342,21 @@ export function WorkOrderPage() {
   );
 }
 
-function AssignDialog({ order, onClose, onConfirm }: { order: WorkOrderItem; onClose: () => void; onConfirm: (name: string) => void }) {
-  const [staffName, setStaffName] = useState(mockStaff.find((staff) => staff.status === "idle")?.name ?? mockStaff[0].name);
+function AssignDialog({
+  order,
+  staffMembers,
+  onClose,
+  onConfirm,
+}: {
+  order: WorkOrderItem;
+  staffMembers: StaffMember[];
+  onClose: () => void;
+  onConfirm: (staff: StaffMember) => void;
+}) {
+  const defaultStaff = staffMembers.find((staff) => staff.status === "idle") ?? staffMembers[0] ?? null;
+  const [staffId, setStaffId] = useState(defaultStaff?.id ?? "");
+  const selectedStaff = staffMembers.find((staff) => staff.id === staffId) ?? null;
+
   return (
     <div className="surveillance-modal-backdrop" onClick={onClose}>
       <div className="assign-dialog" onClick={(event) => event.stopPropagation()}>
@@ -251,12 +364,12 @@ function AssignDialog({ order, onClose, onConfirm }: { order: WorkOrderItem; onC
         <p>{order.work_order_id} · {order.accident_info}</p>
         <label>
           选择处理人员
-          <select value={staffName} onChange={(event) => setStaffName(event.target.value)}>
-            {mockStaff.map((staff) => <option key={staff.id} value={staff.name}>{staff.name} · {staff.role} · {staff.status === "idle" ? "空闲" : "忙碌"}</option>)}
+          <select value={staffId} onChange={(event) => setStaffId(event.target.value)}>
+            {staffMembers.map((staff) => <option key={staff.id} value={staff.id}>{staff.name} · {staff.role} · {staff.status === "idle" ? "空闲" : "忙碌"}</option>)}
           </select>
         </label>
         <div className="dialog-actions">
-          <button onClick={() => onConfirm(staffName)}>确认派发</button>
+          <button disabled={!selectedStaff} onClick={() => selectedStaff && onConfirm(selectedStaff)}>确认派发</button>
           <button onClick={onClose}>取消</button>
         </div>
       </div>
