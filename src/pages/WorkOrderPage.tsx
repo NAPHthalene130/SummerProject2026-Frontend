@@ -14,10 +14,10 @@ interface ChatMessage {
 
 export function WorkOrderPage() {
   const { demoDataEnabled } = useDataMode();
-  const [orders, setOrders] = useState<WorkOrderItem[]>(mockWorkOrders);
-  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(mockStaff);
+  const [orders, setOrders] = useState<WorkOrderItem[]>(demoDataEnabled ? mockWorkOrders : []);
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(demoDataEnabled ? mockStaff : []);
   const [filter, setFilter] = useState<FilterKey>("unresolved");
-  const [selectedId, setSelectedId] = useState<string>(mockWorkOrders[0]?.work_order_id ?? "");
+  const [selectedId, setSelectedId] = useState<string>(demoDataEnabled ? mockWorkOrders[0]?.work_order_id ?? "" : "");
   const [detailOrder, setDetailOrder] = useState<WorkOrderItem | null>(null);
   const [assignOrder, setAssignOrder] = useState<WorkOrderItem | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
@@ -53,26 +53,41 @@ export function WorkOrderPage() {
       { role: "system", text: "生产数据源模式：正在读取后端工单、人员和派发记录。" },
     ]);
 
-    Promise.all([fetchWorkOrders(), fetchStaff()])
-      .then(([workOrders, staff]) => {
-        if (cancelled) return;
-        setOrders(workOrders);
-        setStaffMembers(staff);
-        setSelectedId(workOrders[0]?.work_order_id ?? "");
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setOrders([]);
-        setStaffMembers([]);
-        setSelectedId("");
-        setLoadError(error instanceof Error ? error.message : "后端工单数据加载失败");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    const syncFromBackend = (initialLoad: boolean) => {
+      Promise.all([fetchWorkOrders(), fetchStaff()])
+        .then(([workOrders, staff]) => {
+          if (cancelled) return;
+          setOrders(workOrders);
+          setStaffMembers(staff);
+          setSelectedId((current) => workOrders.some((order) => order.work_order_id === current)
+            ? current
+            : workOrders[0]?.work_order_id ?? "");
+          setDetailOrder((current) => current
+            ? workOrders.find((order) => order.work_order_id === current.work_order_id) ?? null
+            : null);
+          setAssignOrder((current) => current
+            ? workOrders.find((order) => order.work_order_id === current.work_order_id) ?? null
+            : null);
+          setLoadError("");
+        })
+        .catch((error) => {
+          if (cancelled || !initialLoad) return;
+          setOrders([]);
+          setStaffMembers([]);
+          setSelectedId("");
+          setLoadError(error instanceof Error ? error.message : "后端工单数据加载失败");
+        })
+        .finally(() => {
+          if (!cancelled && initialLoad) setLoading(false);
+        });
+    };
+
+    syncFromBackend(true);
+    const syncTimer = window.setInterval(() => syncFromBackend(false), 5_000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(syncTimer);
     };
   }, [demoDataEnabled]);
 
