@@ -27,6 +27,18 @@ export interface CameraStatsResponse {
   cameras: CameraStatsItem[];
 }
 
+export interface RiskDetail {
+  risk_score: number;
+  vehicle_count: number;
+  max_vehicle_risk: number;
+  min_vehicle_risk: number;
+}
+
+export interface RisksResponse {
+  camera_risks: Record<string, number>;
+  detailed: Record<string, RiskDetail>;
+}
+
 class ApiError extends Error {
   constructor(
     public status: number,
@@ -52,6 +64,10 @@ export function fetchCameras(): Promise<BackendCamera[]> {
 
 export function fetchCameraStats(): Promise<CameraStatsResponse> {
   return request<CameraStatsResponse>("/api/v1/cameras/stats");
+}
+
+export function fetchRisks(): Promise<RisksResponse> {
+  return request<RisksResponse>("/api/v1/risks/");
 }
 
 export function postLiveOffer(cameraId: string, body: LiveOfferRequest): Promise<LiveOfferResponse> {
