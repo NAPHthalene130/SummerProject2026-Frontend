@@ -21,11 +21,24 @@ type MapMode = "risk" | "traffic";
 
 const POLL_INTERVAL_MS = 3000;
 
+const CONTINUOUS_STOPS = [
+  { score: 0.0, color: "#2ecc71" },
+  { score: 0.5, color: "#f1c40f" },
+  { score: 1.0, color: "#e74c3c" },
+];
+
 function riskToColor(score: number): string {
-  if (score <= 0.25) return "#2ecc71";
-  if (score <= 0.5) return "#f1c40f";
-  if (score <= 0.75) return "#e67e22";
-  return "#e74c3c";
+  if (score <= 0) return CONTINUOUS_STOPS[0].color;
+  if (score >= 1) return CONTINUOUS_STOPS[CONTINUOUS_STOPS.length - 1].color;
+  for (let i = 0; i < CONTINUOUS_STOPS.length - 1; i++) {
+    const lo = CONTINUOUS_STOPS[i];
+    const hi = CONTINUOUS_STOPS[i + 1];
+    if (score >= lo.score && score <= hi.score) {
+      const t = (score - lo.score) / (hi.score - lo.score);
+      return lerpColor(lo.color, hi.color, t);
+    }
+  }
+  return CONTINUOUS_STOPS[0].color;
 }
 
 function lerpColor(a: string, b: string, t: number): string {
