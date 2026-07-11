@@ -4,7 +4,7 @@ import { useDataMode } from "../context/DataModeContext";
 import { useScenarioPlayback } from "../hooks/useScenarioPlayback";
 import type { TrafficEvent } from "../types/business";
 import { getRiskColor, getRiskText, getTrafficFlowColor } from "../utils/riskStyle";
-import { fetchCameras, postLiveOffer, type BackendCamera } from "../api/client";
+import { fetchCameras, fetchCameraStats, postLiveOffer, type BackendCamera } from "../api/client";
 
 interface CameraView {
   camera: CameraPoint;
@@ -48,11 +48,13 @@ export function MonitorPage() {
   const [backendCameras, setBackendCameras] = useState<BackendCamera[]>([]);
   const [backendLoading, setBackendLoading] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
+  const [vehicleCountMap, setVehicleCountMap] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (demoDataEnabled) {
       setBackendCameras([]);
       setBackendError(null);
+      setVehicleCountMap({});
       return;
     }
 
@@ -77,6 +79,22 @@ export function MonitorPage() {
       });
 
     return () => { cancelled = true; };
+  }, [demoDataEnabled]);
+
+  useEffect(() => {
+    if (demoDataEnabled) return;
+    const interval = window.setInterval(() => {
+      fetchCameraStats()
+        .then((res) => {
+          const map: Record<string, number> = {};
+          for (const item of res.cameras) {
+            map[item.camera_id] = item.total_vehicle_count;
+          }
+          setVehicleCountMap(map);
+        })
+        .catch(() => {});
+    }, 2000);
+    return () => window.clearInterval(interval);
   }, [demoDataEnabled]);
 
   const demoViews = useMemo(() => {
@@ -227,6 +245,7 @@ export function MonitorPage() {
                 <WebRTCTile
                   key={view.camera.camera_id}
                   view={view}
+                  vehicleCount={vehicleCountMap[view.camera.camera_id] ?? 0}
                   expandedId={expandedId}
                   onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
                   onSelect={setActiveCamera}
@@ -261,7 +280,7 @@ export function MonitorPage() {
         demoDataEnabled ? (
           <DemoMonitorModal view={activeCamera} onClose={() => setActiveCamera(null)} />
         ) : (
-          <LiveMonitorModal cameraView={activeCamera} onClose={() => setActiveCamera(null)} />
+          <LiveMonitorModal cameraView={activeCamera} vehicleCount={vehicleCountMap[activeCamera.camera.camera_id] ?? 0} onClose={() => setActiveCamera(null)} />
         )
       ) : null}
     </section>
@@ -348,11 +367,13 @@ function MonitorTile({
 
 function WebRTCTile({
   view,
+  vehicleCount,
   expandedId,
   onToggleExpand,
   onSelect,
 }: {
   view: CameraView;
+  vehicleCount: number;
   expandedId: string | null;
   onToggleExpand: (id: string) => void;
   onSelect: (view: CameraView) => void;
@@ -423,9 +444,9 @@ function WebRTCTile({
           </>
         ) : (
           <>
+            <span>识别车辆 {vehicleCount}</span>
             <span>经度 {view.camera.lng.toFixed(4)}</span>
             <span>纬度 {view.camera.lat.toFixed(4)}</span>
-            <span>状态 {statusText}</span>
           </>
         )}
         <button onClick={() => onToggleExpand(view.camera.camera_id)}>详情</button>
@@ -738,7 +759,7 @@ function useWebRTC(cameraId: string) {
   return { stream, connecting, error, connect, disconnect };
 }
 
-function LiveMonitorModal({ cameraView, onClose }: { cameraView: CameraView; onClose: () => void }) {
+function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: CameraView; vehicleCount: number; onClose: () => void }) {
   const { stream, connecting, error, connect, disconnect } = useWebRTC(cameraView.camera.camera_id);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -787,6 +808,7 @@ function LiveMonitorModal({ cameraView, onClose }: { cameraView: CameraView; onC
           <div><span>摄像头ID</span><b>{cameraView.camera.camera_id}</b></div>
           <div><span>名称</span><b>{cameraView.camera.name}</b></div>
           <div><span>坐标</span><b>{cameraView.camera.lng.toFixed(6)}, {cameraView.camera.lat.toFixed(6)}</b></div>
+          <div><span>识别车辆</span><b>{vehicleCount}</b></div>
           <div><span>状态</span><b>{cameraView.camera.status === "online" ? "在线" : "离线"}</b></div>
         </div>
         <div className="modal-exit-row">

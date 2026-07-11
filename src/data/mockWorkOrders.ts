@@ -11,7 +11,8 @@ export interface WorkOrderItem {
   accident_info: string;
   event_time: string;
   event_level: "low" | "medium" | "high";
-  status: "unassigned" | "pending" | "processing" | "completed" | "false_alarm";
+  status: "unassigned" | "pending" | "processing" | "completed" | "ignored";
+  work_order_status: 0 | 1 | 2;
   assignee?: string;
   description: string;
   ai_suggestion: string;
@@ -98,6 +99,7 @@ export const mockWorkOrders: WorkOrderItem[] = [
     event_time: "2026-07-09 09:15:00",
     event_level: "high",
     status: "unassigned",
+    work_order_status: 0,
     description: "AI 检测到车辆异常停滞，后方车流排队长度快速增加。",
     ai_suggestion: "建议优先确认现场人员安全，临时封控右侧车道，并联动交警与清障车辆。",
     scene_images: ["https://placehold.co/640x360/172033/f4f8ff?text=Accident+BD+Highway"],
@@ -115,7 +117,8 @@ export const mockWorkOrders: WorkOrderItem[] = [
     event_time: "2026-07-09 09:22:00",
     event_level: "medium",
     status: "pending",
-    assignee: "张昌钰",
+    work_order_status: 0,
+    assignee: "人员B",
     description: "施工围挡附近车辆排队明显，通行效率下降。",
     ai_suggestion: "建议核查施工占道范围，补充临时警示牌，调整高峰绕行提示。",
     scene_images: ["https://placehold.co/640x360/2c2f39/f4f8ff?text=Construction+Zhichun"],
@@ -133,11 +136,12 @@ export const mockWorkOrders: WorkOrderItem[] = [
     event_time: "2026-07-09 09:30:00",
     event_level: "medium",
     status: "processing",
-    assignee: "何乔阳",
-    description: "海淀黄庄路口车流集中，拥堵蔓延至中关村南段。",
-    ai_suggestion: "建议安排现场疏导，临时调整信号灯配时，并提示绕行万泉河路。",
-    scene_images: ["https://placehold.co/640x360/1b3044/f4f8ff?text=Huangzhuang+Congestion"],
-    scene_info: "路口等待车辆约 25 辆，非机动车与机动车有短时交织。",
+    work_order_status: 0,
+    assignee: "人员C",
+    description: "园区入口车辆集中进入，短时拥堵并影响学院路通行。",
+    ai_suggestion: "建议安排现场疏导，开放临停区，并优化入口排队动线。",
+    scene_images: ["https://placehold.co/640x360/1b3044/f4f8ff?text=Campus+Entrance"],
+    scene_info: "入口等待车辆约 18 辆，非机动车与机动车有短时交织。",
   },
   {
     work_order_id: "WO-20260709-004",
@@ -151,8 +155,9 @@ export const mockWorkOrders: WorkOrderItem[] = [
     event_time: "2026-07-09 08:40:00",
     event_level: "low",
     status: "completed",
-    assignee: "鲁凌云",
-    description: "北四环西路检测到短时违停，影响中关村方向右转车辆通行。",
+    work_order_status: 1,
+    assignee: "人员A",
+    description: "核心路口附近检测到短时违停，影响右转车辆通行。",
     ai_suggestion: "建议巡检提醒驶离，并纳入重点观察点。",
     scene_images: ["https://placehold.co/640x360/14263a/f4f8ff?text=Illegal+Parking+N4th"],
     scene_info: "违停车辆停靠约 4 分钟，未造成持续拥堵。",
@@ -172,7 +177,8 @@ export const mockWorkOrders: WorkOrderItem[] = [
     event_time: "2026-07-09 08:10:00",
     event_level: "low",
     status: "completed",
-    assignee: "陈子聪",
+    work_order_status: 1,
+    assignee: "人员D",
     description: "巡检图像提示井盖疑似偏移，需现场复核。",
     ai_suggestion: "建议复核井盖状态，如存在松动及时安排市政维修。",
     scene_images: ["https://placehold.co/640x360/253142/f4f8ff?text=Manhole+Check"],
@@ -192,8 +198,9 @@ export const mockWorkOrders: WorkOrderItem[] = [
     accident_info: "AI 误报行人闯入机动车道",
     event_time: "2026-07-09 07:52:00",
     event_level: "low",
-    status: "false_alarm",
-    assignee: "鲁凌云",
+    status: "ignored",
+    work_order_status: 2,
+    assignee: "人员A",
     description: "模型将路侧工作人员误判为行人闯入机动车道。",
     ai_suggestion: "建议将该样本加入误报样本库，优化施工人员识别标签。",
     scene_images: ["https://placehold.co/640x360/202b3b/f4f8ff?text=False+Alarm"],

@@ -4718,6 +4718,28 @@ button:hover {
   margin-top: 10px;
 }
 
+.row-actions .ignore-order-button,
+.detail-actions .ignore-order-button {
+  color: #ffffff !important;
+  background: #7f8c8d !important;
+  border-color: #6f7b7c !important;
+  box-shadow: none !important;
+}
+
+.row-actions .ignore-order-button:hover,
+.detail-actions .ignore-order-button:hover {
+  color: #ffffff !important;
+  background: #667273 !important;
+  border-color: #596364 !important;
+  box-shadow: 0 8px 18px rgba(60, 64, 67, 0.22) !important;
+}
+
+.status-chip.ignored {
+  color: #ffffff !important;
+  background: #7f8c8d !important;
+  animation: none !important;
+}
+
 .agent-panel {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
