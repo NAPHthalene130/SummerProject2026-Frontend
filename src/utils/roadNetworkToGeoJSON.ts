@@ -31,12 +31,13 @@ export function roadNetworkToGeoJSON(
         },
         geometry: {
           type: "LineString" as const,
-          coordinates: [
+          // 【核心修改】：优先使用生成的真实轨迹 path，如果没有则降级为起点到终点的直线
+          coordinates: segment.path ? segment.path : [
             [from.lng, from.lat],
             [to.lng, to.lat],
           ],
-        },
+        }
       }];
-    }),
+    })
   };
 }

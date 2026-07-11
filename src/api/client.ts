@@ -18,13 +18,16 @@ export interface LiveOfferResponse {
   type: string;
 }
 
-export interface CameraStatsItem {
-  camera_id: string;
-  total_vehicle_count: number;
+export interface RiskDetail {
+  risk_score: number;
+  vehicle_count: number;
+  max_vehicle_risk: number;
+  min_vehicle_risk: number;
 }
 
-export interface CameraStatsResponse {
-  cameras: CameraStatsItem[];
+export interface RisksResponse {
+  camera_risks: Record<string, number>;
+  detailed: Record<string, RiskDetail>;
 }
 
 class ApiError extends Error {
@@ -50,8 +53,8 @@ export function fetchCameras(): Promise<BackendCamera[]> {
   return request<BackendCamera[]>("/api/v1/cameras/");
 }
 
-export function fetchCameraStats(): Promise<CameraStatsResponse> {
-  return request<CameraStatsResponse>("/api/v1/cameras/stats");
+export function fetchRisks(): Promise<RisksResponse> {
+  return request<RisksResponse>("/api/v1/risks/");
 }
 
 export function postLiveOffer(cameraId: string, body: LiveOfferRequest): Promise<LiveOfferResponse> {
