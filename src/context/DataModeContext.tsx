@@ -7,6 +7,8 @@ interface DataModeContextValue {
 
 const DataModeContext = createContext<DataModeContextValue | null>(null);
 
+// Use a versioned key so browsers that inherited the old default `true`
+// migrate to the new backend-first default once.
 const STORAGE_KEY = "smart-road-demo-data-enabled-v2";
 
 export function DataModeProvider({ children }: { children: ReactNode }) {

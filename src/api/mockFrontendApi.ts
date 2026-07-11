@@ -63,16 +63,17 @@ export async function updateWorkOrderStatus(
         ? {
             ...order,
             status,
+            work_order_status: status === "completed" ? 1 : status === "ignored" ? 2 : 0,
             assignee: assignee ?? order.assignee,
-            completed_at: status === "completed" || status === "false_alarm"
+            completed_at: status === "completed" || status === "ignored"
               ? new Date().toLocaleString("zh-CN", { hour12: false })
               : order.completed_at,
             process_message: status === "completed"
               ? order.process_message ?? "现场处置完成，道路状态恢复观察中。"
-              : status === "false_alarm"
-                ? order.process_message ?? "经人工复核，该事件为误报，已关闭。"
+              : status === "ignored"
+                ? order.process_message ?? "该工单已忽略。"
                 : order.process_message,
-            process_images: status === "completed" || status === "false_alarm"
+            process_images: status === "completed"
               ? order.process_images ?? ["https://placehold.co/640x360/263d32/f4f8ff?text=Process+Image"]
               : order.process_images,
           }

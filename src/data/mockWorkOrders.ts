@@ -11,7 +11,8 @@ export interface WorkOrderItem {
   accident_info: string;
   event_time: string;
   event_level: "low" | "medium" | "high";
-  status: "unassigned" | "pending" | "processing" | "completed" | "false_alarm";
+  status: "unassigned" | "pending" | "processing" | "completed" | "ignored";
+  work_order_status: 0 | 1 | 2;
   assignee?: string;
   description: string;
   ai_suggestion: string;
@@ -68,6 +69,7 @@ export const mockWorkOrders: WorkOrderItem[] = [
     event_time: "2026-07-09 09:15:00",
     event_level: "high",
     status: "unassigned",
+    work_order_status: 0,
     description: "AI 检测到车辆异常停滞，后方车流排队长度快速增加。",
     ai_suggestion: "建议优先确认现场人员安全，临时封控右侧车道，并联动交警与清障车辆。",
     scene_images: ["https://placehold.co/640x360/172033/f4f8ff?text=Gaoxin+Accident"],
@@ -85,6 +87,7 @@ export const mockWorkOrders: WorkOrderItem[] = [
     event_time: "2026-07-09 09:22:00",
     event_level: "medium",
     status: "pending",
+    work_order_status: 0,
     assignee: "人员B",
     description: "施工围挡附近车辆排队明显，通行效率下降。",
     ai_suggestion: "建议核查施工占道范围，补充临时警示牌，调整高峰绕行提示。",
@@ -103,6 +106,7 @@ export const mockWorkOrders: WorkOrderItem[] = [
     event_time: "2026-07-09 09:30:00",
     event_level: "medium",
     status: "processing",
+    work_order_status: 0,
     assignee: "人员C",
     description: "园区入口车辆集中进入，短时拥堵并影响学院路通行。",
     ai_suggestion: "建议安排现场疏导，开放临停区，并优化入口排队动线。",
@@ -121,6 +125,7 @@ export const mockWorkOrders: WorkOrderItem[] = [
     event_time: "2026-07-09 08:40:00",
     event_level: "low",
     status: "completed",
+    work_order_status: 1,
     assignee: "人员A",
     description: "核心路口附近检测到短时违停，影响右转车辆通行。",
     ai_suggestion: "建议巡检提醒驶离，并纳入重点观察点。",
@@ -142,6 +147,7 @@ export const mockWorkOrders: WorkOrderItem[] = [
     event_time: "2026-07-09 08:10:00",
     event_level: "low",
     status: "completed",
+    work_order_status: 1,
     assignee: "人员D",
     description: "巡检图像提示井盖疑似偏移，需现场复核。",
     ai_suggestion: "建议复核井盖状态，如存在松动及时安排市政维修。",
@@ -162,7 +168,8 @@ export const mockWorkOrders: WorkOrderItem[] = [
     accident_info: "AI 误报行人闯入机动车道",
     event_time: "2026-07-09 07:52:00",
     event_level: "low",
-    status: "false_alarm",
+    status: "ignored",
+    work_order_status: 2,
     assignee: "人员A",
     description: "模型将路侧工作人员误判为行人闯入机动车道。",
     ai_suggestion: "建议将该样本加入误报样本库，优化施工人员识别标签。",
