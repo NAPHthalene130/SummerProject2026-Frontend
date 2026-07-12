@@ -64,6 +64,11 @@ export interface MobileReport {
   review_message?: string; reviewed_at?: string;
 }
 
+export interface AgentChatResponse {
+  reply: string;
+  thread_id: string;
+}
+
 class ApiError extends Error {
   constructor(
     public status: number,
@@ -74,10 +79,10 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+async function request<T>(url: string, init?: RequestInit, timeoutMs = 12_000): Promise<T> {
   const timeoutController = init?.signal ? null : new AbortController();
   const timeoutId = timeoutController
-    ? window.setTimeout(() => timeoutController.abort(), 12_000)
+    ? window.setTimeout(() => timeoutController.abort(), timeoutMs)
     : null;
   let response: Response;
   try {
@@ -134,6 +139,14 @@ export function fetchWorkOrders(): Promise<WorkOrderItem[]> {
 
 export function fetchStaff(): Promise<StaffMember[]> {
   return request<StaffMember[]>("/api/v1/staff/");
+}
+
+export function chatWithAgent(message: string, threadId?: string): Promise<AgentChatResponse> {
+  return request<AgentChatResponse>("/api/v1/agent/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, thread_id: threadId ?? null }),
+  }, 60_000);
 }
 
 export function fetchMobileReports(): Promise<MobileReport[]> {
