@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 
 interface DataModeContextValue {
   demoDataEnabled: boolean;
@@ -7,26 +7,8 @@ interface DataModeContextValue {
 
 const DataModeContext = createContext<DataModeContextValue | null>(null);
 
-// Use a versioned key so browsers that inherited the old default `true`
-// migrate to the new backend-first default once.
-const STORAGE_KEY = "smart-road-demo-data-enabled-v2";
-
 export function DataModeProvider({ children }: { children: ReactNode }) {
-  const [demoDataEnabled, setDemoDataEnabled] = useState(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored === "true";
-  });
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, String(demoDataEnabled));
-  }, [demoDataEnabled]);
-
-  const value = useMemo<DataModeContextValue>(() => ({
-    demoDataEnabled,
-    toggleDemoData: () => setDemoDataEnabled((current) => !current),
-  }), [demoDataEnabled]);
-
-  return <DataModeContext.Provider value={value}>{children}</DataModeContext.Provider>;
+  return <DataModeContext.Provider value={{ demoDataEnabled: false, toggleDemoData: () => undefined }}>{children}</DataModeContext.Provider>;
 }
 
 export function useDataMode() {

@@ -21,6 +21,10 @@ export interface WorkOrderItem {
   process_message?: string;
   process_images?: string[];
   completed_at?: string;
+  required_category?: string;
+  feedback_review_status?: "none" | "pending" | "approved" | "rejected";
+  feedback_requested_status?: "completed" | "ignored";
+  feedback_review_message?: string;
 }
 
 export const mockFrontendEvents: TrafficEvent[] = [
@@ -104,6 +108,7 @@ export const mockWorkOrders: WorkOrderItem[] = [
     ai_suggestion: "建议优先确认现场人员安全，临时封控右侧车道，并联动交警与清障车辆。",
     scene_images: ["https://placehold.co/640x360/172033/f4f8ff?text=Accident+BD+Highway"],
     scene_info: "画面显示 2 辆小客车低速接触，后方车辆出现连续变道。",
+    required_category: "traffic_police",
   },
   {
     work_order_id: "WO-20260709-002",
@@ -123,6 +128,7 @@ export const mockWorkOrders: WorkOrderItem[] = [
     ai_suggestion: "建议核查施工占道范围，补充临时警示牌，调整高峰绕行提示。",
     scene_images: ["https://placehold.co/640x360/2c2f39/f4f8ff?text=Construction+Zhichun"],
     scene_info: "施工区外侧车道通行能力下降，排队影响知春路东西向车流。",
+    required_category: "road_maintenance",
   },
   {
     work_order_id: "WO-20260709-003",
@@ -142,6 +148,7 @@ export const mockWorkOrders: WorkOrderItem[] = [
     ai_suggestion: "建议安排现场疏导，开放临停区，并优化入口排队动线。",
     scene_images: ["https://placehold.co/640x360/1b3044/f4f8ff?text=Campus+Entrance"],
     scene_info: "入口等待车辆约 18 辆，非机动车与机动车有短时交织。",
+    required_category: "traffic_coordination",
   },
   {
     work_order_id: "WO-20260709-004",
@@ -164,6 +171,7 @@ export const mockWorkOrders: WorkOrderItem[] = [
     process_message: "现场已完成劝离，路口通行恢复正常。",
     process_images: ["https://placehold.co/640x360/123826/f4f8ff?text=Feedback+Resolved"],
     completed_at: "2026-07-09 08:58:00",
+    required_category: "traffic_police",
   },
   {
     work_order_id: "WO-20260709-005",
@@ -186,6 +194,7 @@ export const mockWorkOrders: WorkOrderItem[] = [
     process_message: "现场复核为误报，井盖状态正常。",
     process_images: ["https://placehold.co/640x360/263d32/f4f8ff?text=Feedback+Checked"],
     completed_at: "2026-07-09 08:35:00",
+    required_category: "municipal_facilities",
   },
   {
     work_order_id: "WO-20260709-006",
@@ -208,5 +217,6 @@ export const mockWorkOrders: WorkOrderItem[] = [
     process_message: "确认误报，已关闭并加入样本复盘。",
     process_images: ["https://placehold.co/640x360/343434/f4f8ff?text=False+Alarm+Closed"],
     completed_at: "2026-07-09 08:05:00",
+    required_category: "road_maintenance",
   },
 ];
