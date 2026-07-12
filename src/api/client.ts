@@ -39,6 +39,13 @@ export interface RisksResponse {
   detailed: Record<string, RiskDetail>;
 }
 
+export interface MobileReport {
+  report_id: number; reporter_user_id: number; reporter_name: string; title: string;
+  location: string; detail: string; severity: "low" | "medium" | "high";
+  event_type: string; image_urls: string[]; status: "pending" | "converted" | "rejected";
+  created_at: string; work_order_id?: string;
+}
+
 class ApiError extends Error {
   constructor(
     public status: number,
@@ -84,6 +91,21 @@ export function fetchWorkOrders(): Promise<WorkOrderItem[]> {
 
 export function fetchStaff(): Promise<StaffMember[]> {
   return request<StaffMember[]>("/api/v1/staff/");
+}
+
+export function deleteStaff(userId: string): Promise<{ deleted: boolean; user_id: number }> {
+  return request(`/api/v1/staff/${encodeURIComponent(userId)}`, { method: "DELETE" });
+}
+
+export function fetchMobileReports(): Promise<MobileReport[]> {
+  return request<MobileReport[]>("/api/v1/mobile-reports?status=pending");
+}
+
+export function convertMobileReport(reportId: number, requiredCategory: string): Promise<MobileReport> {
+  return request<MobileReport>(`/api/v1/mobile-reports/${reportId}/convert`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ required_category: requiredCategory }),
+  });
 }
 
 export function dispatchWorkOrder(workOrderId: string, userId: string): Promise<WorkOrderItem> {
