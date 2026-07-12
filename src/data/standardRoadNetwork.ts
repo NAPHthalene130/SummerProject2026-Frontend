@@ -1,3 +1,4 @@
+// 此文件由 scripts/generateRoadPaths.js 自动生成，请勿手动修改
 export type RoadStatus = "normal" | "busy" | "risk" | "danger";
 
 export interface RoadNode {
@@ -25,6 +26,7 @@ export interface RoadSegment {
   traffic_flow: number;
   avg_speed: number;
   risk_score: number;
+  path?: [number, number][];
 }
 
 export interface CameraPoint {

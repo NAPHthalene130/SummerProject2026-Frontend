@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { dispatchWorkOrder, fetchStaff, fetchWorkOrders, updateWorkOrderStatus } from "../api/client";
+import { convertMobileReport, dispatchWorkOrder, fetchMobileReports, fetchStaff, fetchWorkOrders, rejectMobileReport, reviewWorkOrderFeedback, updateWorkOrderStatus, type MobileReport } from "../api/client";
 import { useDataMode } from "../context/DataModeContext";
 import { mockStaff, type StaffMember } from "../data/mockStaff";
 import { mockWorkOrders, type WorkOrderItem } from "../data/mockWorkOrders";
@@ -7,6 +7,18 @@ import { getLevelText } from "../utils/riskStyle";
 
 type FilterKey = "unresolved" | "completed" | "ignored" | "all";
 const WORK_ORDER_REFRESH_INTERVAL_MS = 5_000;
+const PERSONNEL_CATEGORIES = [
+  ["traffic_police", "交警执法", "超速、违停、事故管制"],
+  ["road_maintenance", "道路养护", "坑洼、护栏、标线、施工"],
+  ["municipal_facilities", "市政设施", "井盖、路灯、信号设施"],
+  ["vehicle_rescue", "清障救援", "故障车、事故车辆清障"],
+  ["traffic_coordination", "交通疏导", "拥堵、大型活动疏导"],
+  ["emergency_fire", "应急消防", "火灾、危化品、重大事故"],
+] as const;
+
+function categoryName(code?: string) {
+  return PERSONNEL_CATEGORIES.find(([value]) => value === code)?.[1] ?? "未分类";
+}
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -26,10 +38,21 @@ export function WorkOrderPage() {
   const [staffLoading, setStaffLoading] = useState(() => !demoDataEnabled);
   const [loadError, setLoadError] = useState("");
   const [staffLoadError, setStaffLoadError] = useState("");
+  const [mobileReports, setMobileReports] = useState<MobileReport[]>([]);
+  const [convertReport, setConvertReport] = useState<MobileReport | null>(null);
+  const [convertCategory, setConvertCategory] = useState("traffic_police");
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "system", text: "AI 处置助手已接入。选择左侧工单后，我会结合事件等级、道路状态和处置记录给出建议。" },
   ]);
+
+  useEffect(() => {
+    let active = true;
+    const load = () => fetchMobileReports().then((reports) => active && setMobileReports(reports)).catch(() => active && setMobileReports([]));
+    void load();
+    const timer = window.setInterval(load, WORK_ORDER_REFRESH_INTERVAL_MS);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,9 +82,7 @@ export function WorkOrderPage() {
     setStaffLoadError("");
     setDetailOrder(null);
     setAssignOrder(null);
-    setMessages([
-      { role: "system", text: "生产数据源模式：正在读取后端工单、人员和派发记录。" },
-    ]);
+    setMessages([]);
 
     const loadWorkOrders = async (showLoading: boolean) => {
       if (workOrdersRequestInFlight) return;
@@ -125,6 +146,16 @@ export function WorkOrderPage() {
     if (filter === "ignored") return orders.filter((order) => order.work_order_status === 2);
     return orders;
   }, [filter, orders]);
+  const unresolvedOrdersByAssignee = useMemo(() => {
+    const groupedOrders = new Map<string, WorkOrderItem[]>();
+    orders.forEach((order) => {
+      if (order.work_order_status !== 0 || !order.assignee) return;
+      const assignedOrders = groupedOrders.get(order.assignee) ?? [];
+      assignedOrders.push(order);
+      groupedOrders.set(order.assignee, assignedOrders);
+    });
+    return groupedOrders;
+  }, [orders]);
   const selectedOrder = filteredOrders.find((order) => order.work_order_id === selectedId) ?? filteredOrders[0] ?? null;
 
   useEffect(() => {
@@ -186,6 +217,31 @@ export function WorkOrderPage() {
       });
   };
 
+  const handleConvertReport = (report: MobileReport) => {
+    convertMobileReport(report.report_id, convertCategory)
+      .then(() => fetchWorkOrders())
+      .then((items) => { setOrders(items); setMobileReports((reports) => reports.filter((item) => item.report_id !== report.report_id)); setConvertReport(null); })
+      .catch((error) => setLoadError(error instanceof Error ? error.message : "上报转工单失败"));
+  };
+
+  const handleRejectReport = (report: MobileReport) => {
+    const reason = window.prompt("请输入不通过原因", "现场信息不足，请补充后重新上报。");
+    if (!reason?.trim()) return;
+    rejectMobileReport(report.report_id, reason.trim())
+      .then(() => setMobileReports((items) => items.filter((item) => item.report_id !== report.report_id)))
+      .catch((error) => setLoadError(error instanceof Error ? error.message : "上报审核失败"));
+  };
+
+  const handleReviewFeedback = (order: WorkOrderItem, decision: "approve" | "reject") => {
+    const message = decision === "approve"
+      ? "电脑端复核通过。"
+      : window.prompt("请输入退回原因", "处置证据不足，请补充说明或现场照片。")?.trim();
+    if (decision === "reject" && !message) return;
+    reviewWorkOrderFeedback(order.work_order_id, decision, message)
+      .then(replaceOrder)
+      .catch((error) => setLoadError(error instanceof Error ? error.message : "处置结果审核失败"));
+  };
+
   const handleUpdateOrder = (id: string, patch: Partial<WorkOrderItem>) => {
     if (demoDataEnabled || !patch.status) {
       updateOrder(id, patch);
@@ -244,34 +300,47 @@ export function WorkOrderPage() {
         </button>
         <div className="staff-roster">
           <strong>可派发人员</strong>
-          {staffMembers.map((staff) => (
-            <button
-              key={staff.id}
-              className="staff-item"
-              onClick={() => setSelectedStaff(staff)}
-            >
-              <div className={`staff-avatar ${staff.status}`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="8" r="5"/>
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                </svg>
-              </div>
-              <div className="staff-info">
-                <span className="staff-name">{staff.name}</span>
-                <span className="staff-role">{staff.role}</span>
-              </div>
-              <div className="staff-meta">
-                <span className={`staff-status ${staff.status}`}>{staff.status === "idle" ? "空闲" : "忙碌"}</span>
-                <span className="staff-distance">{staff.distance_km}km</span>
-              </div>
-            </button>
-          ))}
+          {staffMembers.map((staff) => {
+            const pendingOrderCount = unresolvedOrdersByAssignee.get(staff.name)?.length ?? 0;
+            return (
+              <button
+                key={staff.id}
+                className="staff-item"
+                onClick={() => setSelectedStaff(staff)}
+              >
+                <div className={`staff-avatar ${pendingOrderCount === 0 ? "idle" : "busy"}`}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="8" r="5"/>
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  </svg>
+                </div>
+                <div className="staff-info">
+                  <span className="staff-name">{staff.name}</span>
+                  <span className="staff-role">{staff.role}</span>
+                </div>
+                <div className="staff-meta">
+                  <span className={`staff-status ${pendingOrderCount === 0 ? "idle" : "busy"}`}>
+                    待处理{pendingOrderCount}工单
+                  </span>
+                </div>
+              </button>
+            );
+          })}
           {!staffLoading && staffLoadError ? <small>人员加载失败：{staffLoadError}</small> : null}
           {!staffLoading && !staffLoadError && staffMembers.length === 0 ? <small>暂无可派发人员</small> : null}
         </div>
       </aside>
 
       <main className="dispatch-list">
+        <section className="mobile-report-inbox">
+          <div className="dispatch-list-head"><div><span>ANDROID REPORTS</span><h2>移动端待审核上报</h2></div><b>{mobileReports.length} 条</b></div>
+          {mobileReports.map((report) => <article className="dispatch-row" key={report.report_id}>
+            <div className="row-status-line"><span className={`level-dot ${report.severity}`} /><b>上报 #{report.report_id}</b><em className="status-chip pending">待审核</em></div>
+            <h3>{report.title}</h3><p>{report.location} · {report.reporter_name}</p><p>{report.detail}</p>
+            <div className="row-actions"><button onClick={() => { setConvertCategory("traffic_police"); setConvertReport(report); }}>转为工单</button><button className="ignore-order-button" onClick={() => handleRejectReport(report)}>不通过</button></div>
+          </article>)}
+          {mobileReports.length === 0 ? <small>暂无 Android 待审核上报</small> : null}
+        </section>
         <div className="dispatch-list-head">
           <div>
             <span>WORK ORDERS</span>
@@ -339,6 +408,7 @@ export function WorkOrderPage() {
                 <span>等级 {getLevelText(order.event_level)}</span>
                 <span>摄像头 {order.camera_name}</span>
                 <span>派发 {order.assignee ?? "未派发"}</span>
+                <span className="category-badge">要求 {categoryName(order.required_category)}</span>
               </div>
               <div className="row-actions">
                 {order.status === "unassigned" ? <button onClick={(event) => { event.stopPropagation(); setAssignOrder(order); }}>派发</button> : null}
@@ -411,14 +481,37 @@ export function WorkOrderPage() {
           onClose={() => setDetailOrder(null)}
           onAssign={() => setAssignOrder(detailOrder)}
           onUpdate={(patch) => handleUpdateOrder(detailOrder.work_order_id, patch)}
+          onReview={(decision) => handleReviewFeedback(detailOrder, decision)}
         />
       ) : null}
 
       {selectedStaff ? (
         <StaffDetailModal
           staff={selectedStaff}
+          pendingOrders={unresolvedOrdersByAssignee.get(selectedStaff.name) ?? []}
           onClose={() => setSelectedStaff(null)}
+          onSelectOrder={(order) => {
+            setSelectedId(order.work_order_id);
+            setSelectedStaff(null);
+            setDetailOrder(order);
+          }}
         />
+      ) : null}
+
+      {convertReport ? (
+        <div className="surveillance-modal-backdrop" onClick={() => setConvertReport(null)}>
+          <div className="assign-dialog category-convert-dialog" onClick={(event) => event.stopPropagation()}>
+            <span className="dialog-kicker">ANDROID REPORT #{convertReport.report_id}</span>
+            <h2>审核上报并生成工单</h2>
+            <p><b>{convertReport.title}</b></p><p>{convertReport.location}</p><p>{convertReport.detail}</p>
+            <div className="personnel-category-grid">
+              {PERSONNEL_CATEGORIES.map(([code, name, scope]) => <button key={code} className={convertCategory === code ? "active" : ""} onClick={() => setConvertCategory(code)}>
+                <b>{name}</b><span>{scope}</span>
+              </button>)}
+            </div>
+            <div className="dialog-actions"><button onClick={() => handleConvertReport(convertReport)}>生成 {categoryName(convertCategory)} 工单</button><button onClick={() => setConvertReport(null)}>取消</button></div>
+          </div>
+        </div>
       ) : null}
     </section>
   );
@@ -435,21 +528,24 @@ function AssignDialog({
   onClose: () => void;
   onConfirm: (staff: StaffMember) => void;
 }) {
-  const defaultStaff = staffMembers.find((staff) => staff.status === "idle") ?? staffMembers[0] ?? null;
+  const matchedStaff = staffMembers.filter((staff) => !order.required_category || staff.personnel_category === order.required_category);
+  const defaultStaff = matchedStaff.find((staff) => staff.status === "idle") ?? matchedStaff[0] ?? null;
   const [staffId, setStaffId] = useState(defaultStaff?.id ?? "");
-  const selectedStaff = staffMembers.find((staff) => staff.id === staffId) ?? null;
+  const selectedStaff = matchedStaff.find((staff) => staff.id === staffId) ?? null;
 
   return (
     <div className="surveillance-modal-backdrop" onClick={onClose}>
       <div className="assign-dialog" onClick={(event) => event.stopPropagation()}>
         <h2>派发工单</h2>
         <p>{order.work_order_id} · {order.accident_info}</p>
+        <p className="assignment-requirement">要求人员类别：<b>{categoryName(order.required_category)}</b></p>
         <label>
           选择处理人员
           <select value={staffId} onChange={(event) => setStaffId(event.target.value)}>
-            {staffMembers.map((staff) => <option key={staff.id} value={staff.id}>{staff.name} · {staff.role} · {staff.status === "idle" ? "空闲" : "忙碌"}</option>)}
+            {matchedStaff.map((staff) => <option key={staff.id} value={staff.id}>{staff.name} · {staff.role} · {staff.status === "idle" ? "空闲" : "忙碌"}</option>)}
           </select>
         </label>
+        {matchedStaff.length === 0 ? <p className="assignment-warning">当前没有注册为“{categoryName(order.required_category)}”的人员，无法派发。</p> : null}
         <div className="dialog-actions">
           <button disabled={!selectedStaff} onClick={() => selectedStaff && onConfirm(selectedStaff)}>确认派发</button>
           <button onClick={onClose}>取消</button>
@@ -464,11 +560,13 @@ function OrderDetailModal({
   onClose,
   onAssign,
   onUpdate,
+  onReview,
 }: {
   order: WorkOrderItem;
   onClose: () => void;
   onAssign: () => void;
   onUpdate: (patch: Partial<WorkOrderItem>) => void;
+  onReview: (decision: "approve" | "reject") => void;
 }) {
   const terminal = order.work_order_status !== 0;
   return (
@@ -502,6 +600,15 @@ function OrderDetailModal({
             <span>当前状态</span><b>{statusText(order.status)}</b>
           </div>
         </div>
+        {order.feedback_review_status === "pending" ? (
+          <div className="process-record feedback-review-panel">
+            <h3>手机端处置结果待审核</h3>
+            <p>{order.process_message || "手机端未填写处置说明。"}</p>
+            <div>{order.process_images?.map((image) => <img key={image} src={image} alt="手机端处置照片" />)}</div>
+            <div className="detail-actions"><button onClick={() => onReview("approve")}>审核通过</button><button className="ignore-order-button" onClick={() => onReview("reject")}>退回处理</button></div>
+          </div>
+        ) : null}
+        {order.feedback_review_status === "rejected" ? <div className="process-record"><h3>最近一次处置结果已退回</h3><p>{order.feedback_review_message}</p></div> : null}
         {terminal ? (
           <div className="process-record">
             <h3>{order.work_order_status === 2 ? "忽略记录" : "处理记录"}</h3>
@@ -554,39 +661,46 @@ function statusText(status: WorkOrderItem["status"]) {
   }
 }
 
-function StaffDetailModal({ staff, onClose }: { staff: StaffMember; onClose: () => void }) {
+function StaffDetailModal({
+  staff,
+  pendingOrders,
+  onClose,
+  onSelectOrder,
+}: {
+  staff: StaffMember;
+  pendingOrders: WorkOrderItem[];
+  onClose: () => void;
+  onSelectOrder: (order: WorkOrderItem) => void;
+}) {
   return (
     <div className="surveillance-modal-backdrop" onClick={onClose}>
       <div className="staff-detail-modal" onClick={(event) => event.stopPropagation()}>
-        <button className="modal-x" onClick={onClose}>X</button>
-        <div className="staff-detail-header">
-          <div className={`staff-detail-avatar ${staff.status}`}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="8" r="5"/>
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-            </svg>
+        <button className="modal-x" aria-label="关闭" onClick={onClose}>X</button>
+        <div className="staff-workload-header">
+          <div>
+            <span>{staff.role}</span>
+            <h2>{staff.name}的待处理工单</h2>
           </div>
-          <div className="staff-detail-info">
-            <h2>{staff.name}</h2>
-            <span className="staff-detail-role">{staff.role}</span>
-            <span className={`staff-detail-status ${staff.status}`}>
-              {staff.status === "idle" ? "空闲" : "忙碌"}
-            </span>
-          </div>
+          <strong>{pendingOrders.length}</strong>
         </div>
-        <div className="staff-detail-body">
-          <div className="staff-detail-row">
-            <span>人员编号</span>
-            <b>{staff.id}</b>
-          </div>
-          <div className="staff-detail-row">
-            <span>当前距离</span>
-            <b>{staff.distance_km} km</b>
-          </div>
-          <div className="staff-detail-row">
-            <span>状态说明</span>
-            <b>{staff.status === "idle" ? "可立即派发工单" : "正在处理其他任务"}</b>
-          </div>
+        <div className="staff-order-list">
+          {pendingOrders.map((order) => (
+            <button key={order.work_order_id} onClick={() => onSelectOrder(order)}>
+              <div className="staff-order-heading">
+                <span>{order.work_order_id}</span>
+                <em className={`status-chip ${order.status}`}>{statusText(order.status)}</em>
+              </div>
+              <strong>{order.accident_info}</strong>
+              <p>{order.monitor_address}</p>
+              <small>{order.event_time}</small>
+            </button>
+          ))}
+          {pendingOrders.length === 0 ? (
+            <div className="staff-order-empty">
+              <strong>暂无待处理工单</strong>
+              <span>当前没有已派发但尚未完成的工单。</span>
+            </div>
+          ) : null}
         </div>
         <div className="staff-detail-actions">
           <button onClick={onClose}>关闭</button>
