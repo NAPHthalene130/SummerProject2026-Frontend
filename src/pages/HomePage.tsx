@@ -120,7 +120,6 @@ export function HomePage() {
   const scenario = useScenarioPlayback();
   const { demoDataEnabled } = useDataMode();
   const [mode, setMode] = useState<MapMode>("risk");
-  const [modeOpen, setModeOpen] = useState(false);
   const [controlOpen, setControlOpen] = useState(false);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [cameraRisks, setCameraRisks] = useState<Record<string, number>>({});
@@ -132,12 +131,11 @@ export function HomePage() {
   const selectedSegment = segments.find((segment) => segment.segment_id === selectedSegmentId) ?? null;
   const recentEvent = events[0];
   const dangerCount = segments.filter((segment) => segment.status === "danger").length;
-  const closeModeMenu = useCallback(() => setModeOpen(false), []);
+  const clearSegmentSelection = useCallback(() => setSelectedSegmentId(null), []);
 
   useEffect(() => {
     if (demoDataEnabled) {
       setSelectedSegmentId(null);
-      setModeOpen(false);
     }
   }, [demoDataEnabled]);
 
@@ -173,7 +171,7 @@ export function HomePage() {
         events={events}
         selectedSegmentId={selectedSegmentId}
         onSelectSegment={setSelectedSegmentId}
-        onBlankClick={closeModeMenu}
+        onBlankClick={clearSegmentSelection}
       />
 
       <button
@@ -188,12 +186,7 @@ export function HomePage() {
         <div className="home-controls-drawer">
           <MapModeSwitcher
             mode={mode}
-            open={modeOpen}
-            onToggle={() => setModeOpen((value) => !value)}
-            onChange={(nextMode) => {
-              setMode(nextMode);
-              setModeOpen(false);
-            }}
+            onChange={setMode}
           />
 
           <MapAssetDock
@@ -530,24 +523,27 @@ function EventLayer({
 
 function MapModeSwitcher({
   mode,
-  open,
-  onToggle,
   onChange,
 }: {
   mode: MapMode;
-  open: boolean;
-  onToggle: () => void;
   onChange: (mode: MapMode) => void;
 }) {
   return (
     <div className="map-mode-float">
-      <button className="mode-trigger" onClick={onToggle}>模式</button>
-      {open ? (
-        <div className="mode-popover">
-          <button className={mode === "risk" ? "active" : ""} onClick={() => onChange("risk")}>事故风险模式</button>
-          <button className={mode === "traffic" ? "active" : ""} onClick={() => onChange("traffic")}>车流密度模式</button>
-        </div>
-      ) : null}
+      <div className="mode-capsule">
+        <button
+          className={mode === "risk" ? "active" : ""}
+          onClick={() => onChange("risk")}
+        >
+          事故风险
+        </button>
+        <button
+          className={mode === "traffic" ? "active" : ""}
+          onClick={() => onChange("traffic")}
+        >
+          车流密度
+        </button>
+      </div>
     </div>
   );
 }
