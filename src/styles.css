@@ -4033,7 +4033,7 @@ button:hover {
 }
 
 .staff-roster strong {
-  color: #bdd8e8;
+  color: #3c4043;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -4045,9 +4045,9 @@ button:hover {
   gap: 10px;
   width: 100%;
   padding: 10px;
-  border: 1px solid rgba(114, 212, 255, 0.1);
+  border: 1px solid rgba(60, 64, 67, 0.12);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.66);
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   text-align: left;
@@ -4056,7 +4056,7 @@ button:hover {
 .staff-item:hover {
   transform: translateX(4px);
   border-color: rgba(66, 133, 244, 0.3);
-  background: rgba(66, 133, 244, 0.08);
+  background: rgba(232, 240, 254, 0.9);
   box-shadow: 0 4px 16px rgba(66, 133, 244, 0.1);
 }
 
@@ -4089,14 +4089,14 @@ button:hover {
 
 .staff-name {
   display: block;
-  color: #e8f4ff;
+  color: #202124;
   font-size: 13px;
   font-weight: 600;
 }
 
 .staff-role {
   display: block;
-  color: #8ba4b8;
+  color: #5f6368;
   font-size: 11px;
   margin-top: 1px;
 }
@@ -4112,18 +4112,14 @@ button:hover {
   font-size: 10px;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(234, 67, 53, 0.2);
-  color: #ea4335;
+  background: #fef7e0;
+  color: #b06000;
+  white-space: nowrap;
 }
 
 .staff-status.idle {
-  background: rgba(52, 168, 83, 0.2);
-  color: #34a853;
-}
-
-.staff-distance {
-  font-size: 11px;
-  color: #6f8ea3;
+  background: #e6f4ea;
+  color: #137333;
 }
 
 .staff-detail-modal {
@@ -4248,6 +4244,170 @@ button:hover {
 .staff-detail-actions button:hover {
   background: rgba(66, 133, 244, 0.2);
   transform: translateY(-1px);
+}
+
+/* Staff workload view */
+.staff-detail-modal {
+  width: min(680px, 92vw);
+  max-height: min(760px, calc(100dvh - 48px));
+  overflow: auto;
+  border: 1px solid rgba(60, 64, 67, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #202124;
+  padding: 22px;
+  box-shadow: 0 26px 72px rgba(60, 64, 67, 0.24);
+  backdrop-filter: blur(18px);
+}
+
+.staff-detail-modal .modal-x {
+  top: 18px;
+  right: 18px;
+  border-color: rgba(60, 64, 67, 0.14);
+  background: #f1f3f4;
+  color: #5f6368;
+}
+
+.staff-workload-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 2px 52px 18px 2px;
+  border-bottom: 1px solid rgba(60, 64, 67, 0.12);
+}
+
+.staff-workload-header span {
+  color: #4285f4;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.staff-workload-header h2 {
+  margin: 5px 0 0;
+  color: #202124;
+  font-size: 23px;
+  letter-spacing: -0.025em;
+}
+
+.staff-workload-header > strong {
+  color: #1a73e8;
+  font-size: 34px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.staff-order-list {
+  display: grid;
+  max-height: min(500px, calc(100dvh - 250px));
+  overflow: auto;
+}
+
+.staff-order-list > button {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid rgba(60, 64, 67, 0.1);
+  border-radius: 0;
+  background: transparent;
+  color: #202124;
+  padding: 15px 4px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.18s ease, padding 0.18s ease;
+}
+
+.staff-order-list > button:hover {
+  background: rgba(232, 240, 254, 0.7);
+  padding-right: 12px;
+  padding-left: 12px;
+}
+
+.staff-order-list > button:focus-visible {
+  outline: 3px solid rgba(66, 133, 244, 0.22);
+  outline-offset: -3px;
+}
+
+.staff-order-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.staff-order-heading > span {
+  color: #1a73e8;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+}
+
+.staff-order-list > button > strong {
+  color: #202124;
+  font-size: 15px;
+}
+
+.staff-order-list > button p {
+  margin: 0;
+  color: #5f6368;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.staff-order-list > button small {
+  color: #80868b;
+  font-size: 11px;
+}
+
+.staff-order-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 52px 16px;
+  text-align: center;
+}
+
+.staff-order-empty strong {
+  color: #3c4043;
+  font-size: 16px;
+}
+
+.staff-order-empty span {
+  color: #80868b;
+  font-size: 13px;
+}
+
+.staff-detail-modal .staff-detail-actions {
+  padding-top: 16px;
+  border-top-color: rgba(60, 64, 67, 0.12);
+}
+
+.staff-detail-modal .staff-detail-actions button {
+  border-color: rgba(66, 133, 244, 0.24);
+  background: #e8f0fe;
+  color: #174ea6;
+}
+
+.staff-detail-modal .staff-detail-actions button:hover {
+  background: #dbe8fd;
+}
+
+@media (max-width: 600px) {
+  .staff-detail-modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    padding: 18px;
+  }
+
+  .staff-workload-header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-right: 44px;
+  }
+
+  .staff-workload-header > strong {
+    font-size: 28px;
+  }
 }
 
 @keyframes modalEnter {

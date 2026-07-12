@@ -2,19 +2,21 @@ import { useEffect, useState } from "react";
 import { DataModeProvider, useDataMode } from "./context/DataModeContext";
 import { HomePage } from "./pages/HomePage";
 import { MonitorPage } from "./pages/MonitorPage";
+import { UserPage } from "./pages/UserPage";
 import { WorkOrderPage } from "./pages/WorkOrderPage";
 
-type ActivePage = "home" | "monitor" | "workOrder";
+type ActivePage = "home" | "monitor" | "workOrder" | "users";
 
 const navItems: Array<{ key: ActivePage; label: string }> = [
   { key: "home", label: "首页" },
   { key: "monitor", label: "监控页" },
   { key: "workOrder", label: "工单页" },
+  { key: "users", label: "用户页" },
 ];
 
 function pageFromHash(): ActivePage {
   const hash = window.location.hash.replace("#", "");
-  if (hash === "monitor" || hash === "workOrder") return hash;
+  if (hash === "monitor" || hash === "workOrder" || hash === "users") return hash;
   return "home";
 }
 
@@ -84,6 +86,7 @@ function AppShell() {
         {activePage === "home" ? <HomePage /> : null}
         {activePage === "monitor" ? <MonitorPage /> : null}
         {activePage === "workOrder" ? <WorkOrderPage /> : null}
+        {activePage === "users" ? <UserPage /> : null}
       </main>
     </div>
   );

@@ -39,6 +39,18 @@ export interface RisksResponse {
   detailed: Record<string, RiskDetail>;
 }
 
+export interface UserItem {
+  user_id: number;
+  user_name: string;
+  user_type: string;
+}
+
+export interface UserWritePayload {
+  user_name: string;
+  user_type: string;
+  password?: string;
+}
+
 class ApiError extends Error {
   constructor(
     public status: number,
@@ -50,11 +62,36 @@ class ApiError extends Error {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  const timeoutController = init?.signal ? null : new AbortController();
+  const timeoutId = timeoutController
+    ? window.setTimeout(() => timeoutController.abort(), 12_000)
+    : null;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      signal: init?.signal ?? timeoutController?.signal,
+    });
+  } catch (error) {
+    if (timeoutController?.signal.aborted) {
+      throw new ApiError(408, "请求超时，请检查后端服务与数据库连接");
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+  }
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new ApiError(response.status, text || `HTTP ${response.status}`);
+    let message = text;
+    try {
+      const payload = JSON.parse(text) as { detail?: string };
+      message = payload.detail ?? text;
+    } catch {
+      // Keep non-JSON error responses unchanged.
+    }
+    throw new ApiError(response.status, message || `HTTP ${response.status}`);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -107,4 +144,28 @@ export function updateWorkOrderStatus(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+export function fetchUsers(): Promise<UserItem[]> {
+  return request<UserItem[]>("/api/v1/users/");
+}
+
+export function createUser(body: UserWritePayload): Promise<UserItem> {
+  return request<UserItem>("/api/v1/users/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateUser(userId: number, body: UserWritePayload): Promise<UserItem> {
+  return request<UserItem>(`/api/v1/users/${userId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteUser(userId: number): Promise<void> {
+  return request<void>(`/api/v1/users/${userId}`, { method: "DELETE" });
 }

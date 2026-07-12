@@ -125,6 +125,16 @@ export function WorkOrderPage() {
     if (filter === "ignored") return orders.filter((order) => order.work_order_status === 2);
     return orders;
   }, [filter, orders]);
+  const unresolvedOrdersByAssignee = useMemo(() => {
+    const groupedOrders = new Map<string, WorkOrderItem[]>();
+    orders.forEach((order) => {
+      if (order.work_order_status !== 0 || !order.assignee) return;
+      const assignedOrders = groupedOrders.get(order.assignee) ?? [];
+      assignedOrders.push(order);
+      groupedOrders.set(order.assignee, assignedOrders);
+    });
+    return groupedOrders;
+  }, [orders]);
   const selectedOrder = filteredOrders.find((order) => order.work_order_id === selectedId) ?? filteredOrders[0] ?? null;
 
   useEffect(() => {
@@ -244,28 +254,32 @@ export function WorkOrderPage() {
         </button>
         <div className="staff-roster">
           <strong>可派发人员</strong>
-          {staffMembers.map((staff) => (
-            <button
-              key={staff.id}
-              className="staff-item"
-              onClick={() => setSelectedStaff(staff)}
-            >
-              <div className={`staff-avatar ${staff.status}`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="8" r="5"/>
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                </svg>
-              </div>
-              <div className="staff-info">
-                <span className="staff-name">{staff.name}</span>
-                <span className="staff-role">{staff.role}</span>
-              </div>
-              <div className="staff-meta">
-                <span className={`staff-status ${staff.status}`}>{staff.status === "idle" ? "空闲" : "忙碌"}</span>
-                <span className="staff-distance">{staff.distance_km}km</span>
-              </div>
-            </button>
-          ))}
+          {staffMembers.map((staff) => {
+            const pendingOrderCount = unresolvedOrdersByAssignee.get(staff.name)?.length ?? 0;
+            return (
+              <button
+                key={staff.id}
+                className="staff-item"
+                onClick={() => setSelectedStaff(staff)}
+              >
+                <div className={`staff-avatar ${pendingOrderCount === 0 ? "idle" : "busy"}`}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="8" r="5"/>
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  </svg>
+                </div>
+                <div className="staff-info">
+                  <span className="staff-name">{staff.name}</span>
+                  <span className="staff-role">{staff.role}</span>
+                </div>
+                <div className="staff-meta">
+                  <span className={`staff-status ${pendingOrderCount === 0 ? "idle" : "busy"}`}>
+                    待处理{pendingOrderCount}工单
+                  </span>
+                </div>
+              </button>
+            );
+          })}
           {!staffLoading && staffLoadError ? <small>人员加载失败：{staffLoadError}</small> : null}
           {!staffLoading && !staffLoadError && staffMembers.length === 0 ? <small>暂无可派发人员</small> : null}
         </div>
@@ -417,7 +431,13 @@ export function WorkOrderPage() {
       {selectedStaff ? (
         <StaffDetailModal
           staff={selectedStaff}
+          pendingOrders={unresolvedOrdersByAssignee.get(selectedStaff.name) ?? []}
           onClose={() => setSelectedStaff(null)}
+          onSelectOrder={(order) => {
+            setSelectedId(order.work_order_id);
+            setSelectedStaff(null);
+            setDetailOrder(order);
+          }}
         />
       ) : null}
     </section>
@@ -554,39 +574,46 @@ function statusText(status: WorkOrderItem["status"]) {
   }
 }
 
-function StaffDetailModal({ staff, onClose }: { staff: StaffMember; onClose: () => void }) {
+function StaffDetailModal({
+  staff,
+  pendingOrders,
+  onClose,
+  onSelectOrder,
+}: {
+  staff: StaffMember;
+  pendingOrders: WorkOrderItem[];
+  onClose: () => void;
+  onSelectOrder: (order: WorkOrderItem) => void;
+}) {
   return (
     <div className="surveillance-modal-backdrop" onClick={onClose}>
       <div className="staff-detail-modal" onClick={(event) => event.stopPropagation()}>
-        <button className="modal-x" onClick={onClose}>X</button>
-        <div className="staff-detail-header">
-          <div className={`staff-detail-avatar ${staff.status}`}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="8" r="5"/>
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-            </svg>
+        <button className="modal-x" aria-label="关闭" onClick={onClose}>X</button>
+        <div className="staff-workload-header">
+          <div>
+            <span>{staff.role}</span>
+            <h2>{staff.name}的待处理工单</h2>
           </div>
-          <div className="staff-detail-info">
-            <h2>{staff.name}</h2>
-            <span className="staff-detail-role">{staff.role}</span>
-            <span className={`staff-detail-status ${staff.status}`}>
-              {staff.status === "idle" ? "空闲" : "忙碌"}
-            </span>
-          </div>
+          <strong>{pendingOrders.length}</strong>
         </div>
-        <div className="staff-detail-body">
-          <div className="staff-detail-row">
-            <span>人员编号</span>
-            <b>{staff.id}</b>
-          </div>
-          <div className="staff-detail-row">
-            <span>当前距离</span>
-            <b>{staff.distance_km} km</b>
-          </div>
-          <div className="staff-detail-row">
-            <span>状态说明</span>
-            <b>{staff.status === "idle" ? "可立即派发工单" : "正在处理其他任务"}</b>
-          </div>
+        <div className="staff-order-list">
+          {pendingOrders.map((order) => (
+            <button key={order.work_order_id} onClick={() => onSelectOrder(order)}>
+              <div className="staff-order-heading">
+                <span>{order.work_order_id}</span>
+                <em className={`status-chip ${order.status}`}>{statusText(order.status)}</em>
+              </div>
+              <strong>{order.accident_info}</strong>
+              <p>{order.monitor_address}</p>
+              <small>{order.event_time}</small>
+            </button>
+          ))}
+          {pendingOrders.length === 0 ? (
+            <div className="staff-order-empty">
+              <strong>暂无待处理工单</strong>
+              <span>当前没有已派发但尚未完成的工单。</span>
+            </div>
+          ) : null}
         </div>
         <div className="staff-detail-actions">
           <button onClick={onClose}>关闭</button>
