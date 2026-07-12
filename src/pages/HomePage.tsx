@@ -6,121 +6,48 @@ import { useScenarioPlayback } from "../hooks/useScenarioPlayback";
 import type { CameraPoint, RoadNode, RoadSegment } from "../data/standardRoadNetwork";
 import type { TrafficEvent } from "../types/business";
 import { roadNetworkToGeoJSON } from "../utils/roadNetworkToGeoJSON";
-import { fetchRisks, type RisksResponse } from "../api/client";
+import { fetchRisks } from "../api/client";
 import {
   getRiskColor,
   getRiskText,
-  getRoadOpacity,
   getRoadTypeText,
   getRoadWidth,
   getTrafficFlowColor,
 } from "../utils/riskStyle";
-import type { FeatureCollection, LineString } from "geojson";
 
-type MapMode = "risk" | "traffic";
+type MapMode = "realtime" | "traffic" | "prediction";
 
 const POLL_INTERVAL_MS = 3000;
+const GRAY = "#7f8c8d";
 
-const CONTINUOUS_STOPS = [
-  { score: 0.0, color: "#2ecc71" },
-  { score: 0.5, color: "#f1c40f" },
-  { score: 1.0, color: "#e74c3c" },
+const STOPS = [
+  { s: 0.0, c: "#2ecc71" },
+  { s: 0.5, c: "#f1c40f" },
+  { s: 1.0, c: "#e74c3c" },
 ];
 
-function riskToColor(score: number): string {
-  if (score <= 0) return CONTINUOUS_STOPS[0].color;
-  if (score >= 1) return CONTINUOUS_STOPS[CONTINUOUS_STOPS.length - 1].color;
-  for (let i = 0; i < CONTINUOUS_STOPS.length - 1; i++) {
-    const lo = CONTINUOUS_STOPS[i];
-    const hi = CONTINUOUS_STOPS[i + 1];
-    if (score >= lo.score && score <= hi.score) {
-      const t = (score - lo.score) / (hi.score - lo.score);
-      return lerpColor(lo.color, hi.color, t);
-    }
-  }
-  return CONTINUOUS_STOPS[0].color;
-}
-
-function lerpColor(a: string, b: string, t: number): string {
+function hexLerp(a: string, b: string, t: number): string {
   const pa = [parseInt(a.slice(1, 3), 16), parseInt(a.slice(3, 5), 16), parseInt(a.slice(5, 7), 16)];
   const pb = [parseInt(b.slice(1, 3), 16), parseInt(b.slice(3, 5), 16), parseInt(b.slice(5, 7), 16)];
-  const r = Math.round(pa[0] + (pb[0] - pa[0]) * t);
-  const g = Math.round(pa[1] + (pb[1] - pa[1]) * t);
-  const bl = Math.round(pa[2] + (pb[2] - pa[2]) * t);
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${bl.toString(16).padStart(2, "0")}`;
+  return `#${[0, 1, 2].map(i => Math.round(pa[i] + (pb[i] - pa[i]) * t).toString(16).padStart(2, "0")).join("")}`;
 }
 
-function gradientGeoJSON(
-  nodes: RoadNode[],
-  segments: RoadSegment[],
-  cameraRisks: Record<string, number>,
-): FeatureCollection<LineString> {
-  const nodeMap = new Map(nodes.map((n) => [n.node_id, n]));
-  const features: FeatureCollection<LineString>["features"] = [];
-
-  const SUB_SEGMENTS = 8;
-
-  for (const seg of segments) {
-    const from = nodeMap.get(seg.from_node);
-    const to = nodeMap.get(seg.to_node);
-    if (!from || !to) continue;
-
-    const path = seg.path && seg.path.length >= 2 ? seg.path : [[from.lng, from.lat], [to.lng, to.lat]];
-
-    const camIds = seg.camera_ids ?? [];
-    const startRisk = camIds.length > 0 ? (cameraRisks[camIds[0]] ?? 0.5) : 0.5;
-    const endRisk = camIds.length > 1 ? (cameraRisks[camIds[camIds.length - 1]] ?? startRisk) : startRisk;
-    const startColor = riskToColor(startRisk);
-    const endColor = riskToColor(endRisk);
-
-    if (path.length < 2) continue;
-
-    const totalLen = path.length - 1;
-    for (let i = 0; i < SUB_SEGMENTS; i++) {
-      const t0 = i / SUB_SEGMENTS;
-      const t1 = (i + 1) / SUB_SEGMENTS;
-
-      const idx0 = Math.floor(t0 * totalLen);
-      const idx1 = Math.min(Math.ceil(t1 * totalLen), totalLen);
-
-      const subCoords: [number, number][] = [];
-      for (let j = idx0; j <= idx1; j++) {
-        subCoords.push(path[j] as [number, number]);
-      }
-
-      if (subCoords.length < 2) {
-        if (idx0 !== idx1) subCoords.push(path[idx1] as [number, number]);
-        else continue;
-      }
-
-      const midT = (t0 + t1) / 2;
-      const color = lerpColor(startColor, endColor, midT);
-
-      features.push({
-        type: "Feature",
-        properties: {
-          segment_id: seg.segment_id,
-          name: seg.name,
-          road_type: seg.road_type,
-          sub_index: i,
-          sub_color: color,
-        },
-        geometry: {
-          type: "LineString",
-          coordinates: subCoords,
-        },
-      });
+function riskToColor(score: number): string {
+  if (score <= 0) return STOPS[0].c;
+  if (score >= 1) return STOPS[STOPS.length - 1].c;
+  for (let i = 0; i < STOPS.length - 1; i++) {
+    if (score <= STOPS[i + 1].s) {
+      const t = (score - STOPS[i].s) / (STOPS[i + 1].s - STOPS[i].s);
+      return hexLerp(STOPS[i].c, STOPS[i + 1].c, t);
     }
   }
-
-  return { type: "FeatureCollection", features };
+  return STOPS[0].c;
 }
 
 export function HomePage() {
   const scenario = useScenarioPlayback();
   const { demoDataEnabled } = useDataMode();
-  const [mode, setMode] = useState<MapMode>("risk");
-  const [modeOpen, setModeOpen] = useState(false);
+  const [mode, setMode] = useState<MapMode>("realtime");
   const [controlOpen, setControlOpen] = useState(false);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [cameraRisks, setCameraRisks] = useState<Record<string, number>>({});
@@ -132,12 +59,11 @@ export function HomePage() {
   const selectedSegment = segments.find((segment) => segment.segment_id === selectedSegmentId) ?? null;
   const recentEvent = events[0];
   const dangerCount = segments.filter((segment) => segment.status === "danger").length;
-  const closeModeMenu = useCallback(() => setModeOpen(false), []);
+  const onBlankClick = useCallback(() => {}, []);
 
   useEffect(() => {
     if (demoDataEnabled) {
       setSelectedSegmentId(null);
-      setModeOpen(false);
     }
   }, [demoDataEnabled]);
 
@@ -151,7 +77,18 @@ export function HomePage() {
       if (cancelled) return;
       fetchRisks()
         .then((data) => {
-          if (!cancelled) setCameraRisks(data.camera_risks);
+          if (cancelled) return;
+          const raw = data.camera_risks;
+          const values = Object.values(raw);
+          if (values.length === 0) return;
+          const min = Math.min(...values);
+          const max = Math.max(...values);
+          const range = max - min || 1;
+          const normalized: Record<string, number> = {};
+          for (const [id, val] of Object.entries(raw)) {
+            normalized[id] = (val - min) / range;
+          }
+          setCameraRisks(normalized);
         })
         .catch(() => {})
         .finally(() => {
@@ -173,7 +110,7 @@ export function HomePage() {
         events={events}
         selectedSegmentId={selectedSegmentId}
         onSelectSegment={setSelectedSegmentId}
-        onBlankClick={closeModeMenu}
+        onBlankClick={onBlankClick}
       />
 
       <button
@@ -186,20 +123,12 @@ export function HomePage() {
 
       {controlOpen ? (
         <div className="home-controls-drawer">
-          <MapModeSwitcher
-            mode={mode}
-            open={modeOpen}
-            onToggle={() => setModeOpen((value) => !value)}
-            onChange={(nextMode) => {
-              setMode(nextMode);
-              setModeOpen(false);
-            }}
-          />
-
           <MapAssetDock
             mode={mode}
+            onModeChange={setMode}
             segments={segments}
             cameras={cameras}
+            cameraRisks={cameraRisks}
             selectedSegmentId={selectedSegmentId}
             onSelectSegment={setSelectedSegmentId}
           />
@@ -225,19 +154,44 @@ export function HomePage() {
 
 function MapAssetDock({
   mode,
+  onModeChange,
   segments,
   cameras,
+  cameraRisks,
   selectedSegmentId,
   onSelectSegment,
 }: {
   mode: MapMode;
+  onModeChange: (m: MapMode) => void;
   segments: RoadSegment[];
   cameras: CameraPoint[];
+  cameraRisks: Record<string, number>;
   selectedSegmentId: string | null;
   onSelectSegment: (segmentId: string) => void;
 }) {
-  const dangerCount = segments.filter((segment) => segment.status === "danger").length;
-  const riskCount = segments.filter((segment) => segment.status === "risk").length;
+  const MODE_LABELS: { key: MapMode; label: string }[] = [
+    { key: "realtime", label: "实时风险" },
+    { key: "traffic", label: "车流密度" },
+    { key: "prediction", label: "风险预测" },
+  ];
+
+  const sorted = useMemo(() => {
+    const arr = [...segments];
+    if (mode === "realtime") {
+      arr.sort((a, b) => {
+        const ra = segAvgRisk(a, cameraRisks);
+        const rb = segAvgRisk(b, cameraRisks);
+        return rb - ra;
+      });
+    } else if (mode === "traffic") {
+      arr.sort((a, b) => b.traffic_flow - a.traffic_flow);
+    } else {
+      arr.sort((a, b) => b.risk_score - a.risk_score);
+    }
+    return arr;
+  }, [segments, mode, cameraRisks]);
+
+  const dangerCount = segments.filter((s) => s.status === "danger").length;
 
   return (
     <aside className="map-asset-dock open">
@@ -246,31 +200,51 @@ function MapAssetDock({
         <strong>{segments.length}</strong>
         <i style={{ background: dangerCount ? "#EA4335" : "#34A853" }} />
       </div>
-      <div className="dock-stats">
-        <b>{dangerCount}</b><span>严重异常</span>
-        <b>{riskCount}</b><span>高风险</span>
-        <b>{cameras.length}</b><span>摄像头</span>
-      </div>
-      <div className="dock-layer-chips">
-        <span className="active">RoadLayer</span>
-        <span>CameraLayer</span>
-        <span>EventLayer</span>
-      </div>
-      <div className="dock-road-list">
-        {segments.slice(0, 8).map((segment) => (
-          <button
-            key={segment.segment_id}
-            className={selectedSegmentId === segment.segment_id ? "active" : ""}
-            onClick={() => onSelectSegment(segment.segment_id)}
+
+      <div className="dock-layer-chips" style={{ display: "flex", gap: 4, padding: "4px 0" }}>
+        {MODE_LABELS.map(({ key, label }) => (
+          <span
+            key={key}
+            className={mode === key ? "active" : ""}
+            style={{ cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 12, background: mode === key ? "#26c6ff" : "#1f2a3a", color: mode === key ? "#000" : "#ccc" }}
+            onClick={() => onModeChange(key)}
           >
-            <i style={{ background: mode === "risk" ? getRiskColor(segment.status) : getTrafficFlowColor(segment.traffic_flow) }} />
-            <span>{segment.name}</span>
-            <b>{mode === "risk" ? getRiskText(segment.status) : segment.traffic_flow}</b>
-          </button>
+            {label}
+          </span>
         ))}
+      </div>
+
+      <div className="dock-road-list">
+        {sorted.map((segment) => {
+          const risk = segAvgRisk(segment, cameraRisks);
+          const hasRisk = Object.keys(cameraRisks).length > 0;
+          const color = mode === "traffic"
+            ? getTrafficFlowColor(segment.traffic_flow)
+            : hasRisk ? riskToColor(risk) : getRiskColor(segment.status);
+          const label = mode === "traffic"
+            ? String(segment.traffic_flow)
+            : hasRisk ? `${(risk * 100).toFixed(0)}%` : getRiskText(segment.status);
+          return (
+            <button
+              key={segment.segment_id}
+              className={selectedSegmentId === segment.segment_id ? "active" : ""}
+              onClick={() => onSelectSegment(segment.segment_id)}
+            >
+              <i style={{ background: color }} />
+              <span>{segment.name}</span>
+              <b>{label}</b>
+            </button>
+          );
+        })}
       </div>
     </aside>
   );
+}
+
+function segAvgRisk(seg: RoadSegment, cameraRisks: Record<string, number>): number {
+  const ids = seg.camera_ids ?? [];
+  const vals = ids.map((id) => cameraRisks[id]).filter((v): v is number => v !== undefined);
+  return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0.5;
 }
 
 function RoadMapView({
@@ -368,11 +342,26 @@ function RoadLayer({
   selectedSegmentId: string | null;
   onSelectSegment: (segmentId: string) => void;
 }) {
-  const hasRisks = Object.keys(cameraRisks).length > 0;
-  const geojson = useMemo(
-    () => hasRisks ? gradientGeoJSON(nodes, segments, cameraRisks) : roadNetworkToGeoJSON(nodes, segments),
-    [nodes, segments, hasRisks, cameraRisks],
-  );
+  const geojson = useMemo(() => roadNetworkToGeoJSON(nodes, segments), [nodes, segments]);
+
+  const roadColors = useMemo(() => {
+    const map = new Map<string, string>();
+    if (Object.keys(cameraRisks).length === 0) {
+      for (const seg of segments) map.set(seg.segment_id, GRAY);
+      return map;
+    }
+    for (const seg of segments) {
+      const camIds = seg.camera_ids ?? [];
+      const risks: number[] = [];
+      for (const cid of camIds) {
+        const r = cameraRisks[cid];
+        if (r !== undefined) risks.push(r);
+      }
+      const avg = risks.length > 0 ? risks.reduce((a, b) => a + b, 0) / risks.length : 0.5;
+      map.set(seg.segment_id, riskToColor(avg));
+    }
+    return map;
+  }, [segments, cameraRisks]);
 
   useEffect(() => {
     if (!map) return;
@@ -381,15 +370,14 @@ function RoadLayer({
       layerRef.current = null;
       return;
     }
-    const roadById = new Map(segments.map((segment) => [segment.segment_id, segment]));
+    const roadById = new Map(segments.map((s) => [s.segment_id, s]));
 
     const casingLayer = L.geoJSON(geojson, {
-      style: (feature) => {
-        const id = String(feature?.properties?.segment_id);
-        const isSelected = selectedSegmentId === id;
+      style: (f) => {
+        const id = String(f?.properties?.segment_id);
         return {
           color: "#0a1520",
-          weight: isSelected ? 12 : 9,
+          weight: selectedSegmentId === id ? 12 : 9,
           opacity: 0.9,
           lineCap: "round",
           lineJoin: "round",
@@ -399,48 +387,25 @@ function RoadLayer({
     });
 
     const coreLayer = L.geoJSON(geojson, {
-      style: (feature) => {
-        const id = String(feature?.properties?.segment_id);
-        const subColor = feature?.properties?.sub_color as string | undefined;
-        if (subColor) {
-          const segment = roadById.get(id);
-          const baseWidth = segment ? getRoadWidth(segment.road_type) : 5;
-          return {
-            color: subColor,
-            weight: baseWidth + (selectedSegmentId === id ? 2 : -1),
-            opacity: 1,
-            lineCap: "round",
-            lineJoin: "round",
-            interactive: true,
-            className: "modern-road-glow",
-          };
-        }
-        const segment = roadById.get(id);
-        const baseWidth = segment ? getRoadWidth(segment.road_type) : 5;
+      style: (f) => {
+        const id = String(f?.properties?.segment_id);
+        const seg = roadById.get(id);
+        const baseWidth = seg ? getRoadWidth(seg.road_type) : 5;
+        const color = roadColors.get(id) || GRAY;
         return {
-          color: segment ? getSegmentColor(segment, mode) : "#95a5a6",
+          color,
           weight: baseWidth + (selectedSegmentId === id ? 2 : -1),
           opacity: 1,
           lineCap: "round",
           lineJoin: "round",
-          interactive: true,
-          className: "modern-road-glow",
         };
       },
-      onEachFeature: (feature, layer) => {
-        const segment = roadById.get(String(feature.properties?.segment_id));
-        if (!segment) return;
-
-        layer.bindTooltip(segment.name, { sticky: true, direction: "top", className: "modern-tooltip" });
-
-        layer.on("click", (event) => {
-          L.DomEvent.stop(event);
-          onSelectSegment(segment.segment_id);
-        });
-        layer.on("mouseover", () => {
-          const pathLayer = layer as L.Path;
-          pathLayer.bringToFront();
-        });
+      onEachFeature: (f, layer) => {
+        const seg = roadById.get(String(f.properties?.segment_id));
+        if (!seg) return;
+        layer.bindTooltip(seg.name, { sticky: true, direction: "top", className: "modern-tooltip" });
+        layer.on("click", (e) => { L.DomEvent.stop(e); onSelectSegment(seg.segment_id); });
+        layer.on("mouseover", () => { (layer as L.Path).bringToFront(); });
       },
     });
 
@@ -448,13 +413,13 @@ function RoadLayer({
     layerRef.current = group;
 
     if (firstRender.current) {
-      const bounds = coreLayer.getBounds();
-      if (bounds.isValid()) {
-        map.fitBounds(bounds.pad(0.3));
-      }
+      try {
+        const bounds = (coreLayer as any).getBounds();
+        if (bounds?.isValid?.()) map.fitBounds(bounds.pad(0.3));
+      } catch {}
       firstRender.current = false;
     }
-  }, [geojson, firstRender, layerRef, map, mode, onSelectSegment, segments, selectedSegmentId]);
+  }, [geojson, roadColors, firstRender, layerRef, map, onSelectSegment, segments, selectedSegmentId]);
 
   return null;
 }
@@ -473,18 +438,23 @@ function CameraLayer({
     layerRef.current?.removeFrom(map);
     const group = L.layerGroup();
     cameras.forEach((camera) => {
-      const isOnline = camera.status === "online";
-      const marker = L.circleMarker([camera.lat, camera.lng], {
-        radius: 10,
-        color: "#ffffff",
-        weight: 3,
-        fillColor: isOnline ? "#26c6ff" : "#95a5a6",
-        fillOpacity: 0.95,
+      const marker = L.marker([camera.lat, camera.lng], {
+        icon: L.divIcon({
+          className: "",
+          html: `<div style="
+            width:18px;height:18px;
+            background:#e74c3c;
+            border:2px solid #c0392b;
+            border-radius:50% 50% 50% 0;
+            transform:rotate(-45deg);
+            box-shadow:1px 1px 3px rgba(0,0,0,0.5);
+          "></div>`,
+          iconSize: [18, 18],
+          iconAnchor: [9, 16],
+        }),
       });
       marker.bindTooltip(`摄像头：${camera.name}`);
       marker.addTo(group);
-      const el = marker.getElement() as HTMLElement | undefined;
-      if (el) el.style.zIndex = "1000";
     });
     group.addTo(map);
     layerRef.current = group;
@@ -528,32 +498,8 @@ function EventLayer({
   return null;
 }
 
-function MapModeSwitcher({
-  mode,
-  open,
-  onToggle,
-  onChange,
-}: {
-  mode: MapMode;
-  open: boolean;
-  onToggle: () => void;
-  onChange: (mode: MapMode) => void;
-}) {
-  return (
-    <div className="map-mode-float">
-      <button className="mode-trigger" onClick={onToggle}>模式</button>
-      {open ? (
-        <div className="mode-popover">
-          <button className={mode === "risk" ? "active" : ""} onClick={() => onChange("risk")}>事故风险模式</button>
-          <button className={mode === "traffic" ? "active" : ""} onClick={() => onChange("traffic")}>车流密度模式</button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function MapLegend({ mode }: { mode: MapMode }) {
-  const rows = mode === "risk"
+  const rows = mode === "realtime" || mode === "prediction"
     ? [
         ["#2ecc71", "通行正常"],
         ["#f1c40f", "车流较大"],
@@ -569,7 +515,7 @@ function MapLegend({ mode }: { mode: MapMode }) {
 
   return (
     <div className="map-legend-float">
-      <strong>{mode === "risk" ? "事故风险图例" : "车流密度图例"}</strong>
+      <strong>{mode === "traffic" ? "车流密度图例" : "风险等级图例"}</strong>
       {rows.map(([color, label]) => <span key={label}><i style={{ background: color }} />{label}</span>)}
       <span><i className="camera-dot" />摄像头</span>
       <span><i className="event-dot" />异常事件</span>
@@ -620,7 +566,7 @@ function SelectedRoadPopup({
       <div className="segment-float-grid">
         <span>道路编号</span><b>{segment.segment_id}</b>
         <span>道路类型</span><b>{getRoadTypeText(segment.road_type)}</b>
-        <span>当前模式</span><b>{mode === "risk" ? "事故风险" : "车流密度"}</b>
+        <span>当前模式</span><b>{mode === "realtime" ? "实时风险" : mode === "traffic" ? "车流密度" : "风险预测"}</b>
         <span>LSTM 实时风险</span>
         <b style={{ color: lstmRisk !== null ? riskToColor(lstmRisk) : "#95a5a6" }}>
           {lstmRisk !== null ? `${(lstmRisk * 100).toFixed(1)}% (${riskToText(lstmRisk)})` : "等待数据…"}
@@ -648,8 +594,4 @@ function SelectedRoadPopup({
       </div>
     </div>
   );
-}
-
-function getSegmentColor(segment: RoadSegment, mode: MapMode) {
-  return mode === "risk" ? getRiskColor(segment.status) : getTrafficFlowColor(segment.traffic_flow);
 }
