@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/api": { target: apiTarget, changeOrigin: true },
         "/orderImg": { target: apiTarget, changeOrigin: true },
+        "/cam-": { target: "http://localhost:8888", changeOrigin: true },
       },
     },
   };

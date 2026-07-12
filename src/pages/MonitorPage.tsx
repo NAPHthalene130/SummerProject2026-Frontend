@@ -378,7 +378,7 @@ function WebRTCTile({
   onToggleExpand: (id: string) => void;
   onSelect: (view: CameraView) => void;
 }) {
-  const mjpegUrl = `/api/v1/live/${view.camera.camera_id}/mjpeg`;
+  const mjpegUrl = `/${view.camera.camera_id}`;
   const [imgError, setImgError] = useState(false);
 
   const hasSegment = view.segment !== null;
@@ -685,7 +685,7 @@ function DemoMonitorModal({ view, onClose }: { view: CameraView; onClose: () => 
 }
 
 function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: CameraView; vehicleCount: number; onClose: () => void }) {
-  const mjpegUrl = `/api/v1/live/${cameraView.camera.camera_id}/mjpeg`;
+  const mjpegUrl = `/${cameraView.camera.camera_id}`;
   const [imgError, setImgError] = useState(false);
 
   const handleClose = () => {
