@@ -448,7 +448,8 @@
   font-weight: 700;
 }
 
-.user-editor-form input {
+.user-editor-form input,
+.user-editor-form select {
   width: 100%;
   min-height: 44px;
   border: 1px solid #dadce0;
@@ -466,7 +467,8 @@
   color: #80868b;
 }
 
-.user-editor-form input:focus {
+.user-editor-form input:focus,
+.user-editor-form select:focus {
   border-color: #4285f4;
   box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.14);
 }

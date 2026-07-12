@@ -51,6 +51,11 @@ export interface UserWritePayload {
   password?: string;
 }
 
+export interface UserLoginPayload {
+  user_name: string;
+  password: string;
+}
+
 export interface MobileReport {
   report_id: number; reporter_user_id: number; reporter_name: string; title: string;
   location: string; detail: string; severity: "low" | "medium" | "high";
@@ -187,6 +192,31 @@ export function fetchUsers(): Promise<UserItem[]> {
   return request<UserItem[]>("/api/v1/users/");
 }
 
+export interface MobileUserItem {
+  user_id: number;
+  name: string;
+  phone: string;
+  personnel_category: string;
+  role_name: string;
+  site: string;
+}
+
+export interface MobileUserWritePayload {
+  name: string;
+  phone: string;
+  personnel_category: string;
+  site: string;
+  password?: string;
+}
+
+export function loginUser(body: UserLoginPayload): Promise<UserItem> {
+  return request<UserItem>("/api/v1/users/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export function createUser(body: UserWritePayload): Promise<UserItem> {
   return request<UserItem>("/api/v1/users/", {
     method: "POST",
@@ -205,4 +235,28 @@ export function updateUser(userId: number, body: UserWritePayload): Promise<User
 
 export function deleteUser(userId: number): Promise<void> {
   return request<void>(`/api/v1/users/${userId}`, { method: "DELETE" });
+}
+
+export function fetchMobileUsers(): Promise<MobileUserItem[]> {
+  return request<MobileUserItem[]>("/api/v1/mobile-users");
+}
+
+export function createMobileUser(body: MobileUserWritePayload & { password: string }): Promise<MobileUserItem> {
+  return request<MobileUserItem>("/api/v1/mobile-users/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateMobileUser(userId: number, body: MobileUserWritePayload): Promise<MobileUserItem> {
+  return request<MobileUserItem>(`/api/v1/mobile-users/${userId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteMobileUser(userId: number): Promise<void> {
+  return request<void>(`/api/v1/mobile-users/${userId}`, { method: "DELETE" });
 }

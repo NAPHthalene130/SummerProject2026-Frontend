@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
-  createUser,
-  deleteUser,
-  fetchUsers,
-  updateUser,
-  type UserItem,
+  createMobileUser,
+  deleteMobileUser,
+  fetchMobileUsers,
+  updateMobileUser,
+  type MobileUserItem,
 } from "../api/client";
 
 
@@ -12,36 +12,40 @@ type EditorMode = "create" | "edit";
 
 interface EditorState {
   mode: EditorMode;
-  user: UserItem | null;
+  user: MobileUserItem | null;
 }
 
 interface UserFormValues {
   userName: string;
-  userType: string;
+  phone: string;
+  personnelCategory: string;
+  site: string;
   password: string;
   confirmPassword: string;
 }
 
 const emptyForm: UserFormValues = {
   userName: "",
-  userType: "",
+  phone: "",
+  personnelCategory: "traffic_police",
+  site: "",
   password: "",
   confirmPassword: "",
 };
 
 export function UserPage() {
-  const [users, setUsers] = useState<UserItem[]>([]);
+  const [users, setUsers] = useState<MobileUserItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [editor, setEditor] = useState<EditorState | null>(null);
-  const [deletingUser, setDeletingUser] = useState<UserItem | null>(null);
+  const [deletingUser, setDeletingUser] = useState<MobileUserItem | null>(null);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      setUsers(await fetchUsers());
+      setUsers(await fetchMobileUsers());
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "用户数据加载失败");
     } finally {
@@ -58,7 +62,7 @@ export function UserPage() {
     window.setTimeout(() => setNotice(""), 2600);
   };
 
-  const handleSaved = (savedUser: UserItem, mode: EditorMode) => {
+  const handleSaved = (savedUser: MobileUserItem, mode: EditorMode) => {
     setUsers((current) => {
       if (mode === "create") return [...current, savedUser].sort((a, b) => a.user_id - b.user_id);
       return current.map((user) => user.user_id === savedUser.user_id ? savedUser : user);
@@ -70,7 +74,7 @@ export function UserPage() {
   const handleDelete = async () => {
     if (!deletingUser) return;
     try {
-      await deleteUser(deletingUser.user_id);
+      await deleteMobileUser(deletingUser.user_id);
       setUsers((current) => current.filter((user) => user.user_id !== deletingUser.user_id));
       setDeletingUser(null);
       showNotice("用户已删除");
@@ -85,9 +89,9 @@ export function UserPage() {
       <div className="user-page-frame">
         <header className="user-page-header">
           <div>
-            <span className="user-page-kicker">USER DIRECTORY</span>
-            <h1>用户管理</h1>
-            <p>查看数据库用户及岗位，创建新用户或维护现有资料。</p>
+            <span className="user-page-kicker">MOBILE PERSONNEL</span>
+            <h1>移动端用户管理</h1>
+            <p>查看可接收工单的手机端工作人员，维护手机号、人员类别与所属站点。</p>
           </div>
           <div className="user-header-actions">
             <div className={`database-state ${error ? "error" : "ready"}`}>
@@ -127,8 +131,10 @@ export function UserPage() {
               <thead>
                 <tr>
                   <th scope="col">ID</th>
-                  <th scope="col">用户名</th>
-                  <th scope="col">岗位</th>
+                  <th scope="col">姓名</th>
+                  <th scope="col">手机号</th>
+                  <th scope="col">人员类别</th>
+                  <th scope="col">所属站点</th>
                   <th scope="col"><span className="sr-only">操作</span></th>
                 </tr>
               </thead>
@@ -137,12 +143,14 @@ export function UserPage() {
                 {!loading && !error ? users.map((user) => (
                   <tr key={user.user_id}>
                     <td data-label="ID"><span className="user-id-cell">#{String(user.user_id).padStart(4, "0")}</span></td>
-                    <td data-label="用户名">
+                    <td data-label="姓名">
                       <div className="user-name-cell">
-                        <strong>{user.user_name}</strong>
+                        <strong>{user.name}</strong>
                       </div>
                     </td>
-                    <td data-label="岗位"><span className="user-role-cell">{user.user_type}</span></td>
+                    <td data-label="手机号"><span className="user-role-cell">{user.phone || "未填写"}</span></td>
+                    <td data-label="人员类别"><span className="user-role-cell">{user.role_name}</span></td>
+                    <td data-label="所属站点"><span className="user-role-cell">{user.site || "未填写"}</span></td>
                     <td data-label="操作">
                       <div className="user-row-actions">
                         <button onClick={() => setEditor({ mode: "edit", user })}>修改</button>
@@ -157,9 +165,9 @@ export function UserPage() {
 
           {!loading && !error && users.length === 0 ? (
             <div className="user-empty-state">
-              <strong>数据库中还没有用户</strong>
-              <span>创建第一个用户后，资料会显示在这里。</span>
-              <button onClick={() => setEditor({ mode: "create", user: null })}>创建用户</button>
+              <strong>还没有手机端工作人员</strong>
+              <span>创建账号后，工作人员可以在移动端登录并接收工单。</span>
+              <button onClick={() => setEditor({ mode: "create", user: null })}>创建手机端用户</button>
             </div>
           ) : null}
         </section>
@@ -196,6 +204,8 @@ function UserTableSkeleton() {
           <td><span /></td>
           <td><span /></td>
           <td><span /></td>
+          <td><span /></td>
+          <td><span /></td>
         </tr>
       ))}
     </>
@@ -209,13 +219,15 @@ function UserEditor({
   onSaved,
 }: {
   mode: EditorMode;
-  user: UserItem | null;
+  user: MobileUserItem | null;
   onClose: () => void;
-  onSaved: (user: UserItem, mode: EditorMode) => void;
+  onSaved: (user: MobileUserItem, mode: EditorMode) => void;
 }) {
   const [values, setValues] = useState<UserFormValues>(() => user ? {
-    userName: user.user_name,
-    userType: user.user_type,
+    userName: user.name,
+    phone: user.phone,
+    personnelCategory: user.personnel_category,
+    site: user.site,
     password: "",
     confirmPassword: "",
   } : emptyForm);
@@ -231,9 +243,9 @@ function UserEditor({
     setFormError("");
 
     const userName = values.userName.trim();
-    const userType = values.userType.trim();
-    if (!userName || !userType) {
-      setFormError("请填写用户名和岗位");
+    const phone = values.phone.trim();
+    if (!userName || !phone) {
+      setFormError("请填写姓名和手机号");
       return;
     }
     if (mode === "create" && !values.password) {
@@ -252,13 +264,15 @@ function UserEditor({
     setSubmitting(true);
     try {
       const payload = {
-        user_name: userName,
-        user_type: userType,
+        name: userName,
+        phone,
+        personnel_category: values.personnelCategory,
+        site: values.site.trim(),
         ...(values.password ? { password: values.password } : {}),
       };
       const savedUser = mode === "create"
-        ? await createUser(payload)
-        : await updateUser(user!.user_id, payload);
+        ? await createMobileUser({ ...payload, password: values.password })
+        : await updateMobileUser(user!.user_id, payload);
       onSaved(savedUser, mode);
     } catch (requestError) {
       setFormError(requestError instanceof Error ? requestError.message : "保存用户失败");
@@ -272,31 +286,51 @@ function UserEditor({
       <div className="user-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="user-editor-title">
         <div className="user-dialog-heading">
           <div>
-            <span>{mode === "create" ? "新增数据库用户" : `用户 #${user?.user_id}`}</span>
-            <h2 id="user-editor-title">{mode === "create" ? "创建用户" : "修改用户"}</h2>
+            <span>{mode === "create" ? "新增手机端账号" : `手机端用户 #${user?.user_id}`}</span>
+            <h2 id="user-editor-title">{mode === "create" ? "创建手机端用户" : "修改手机端用户"}</h2>
           </div>
           <button type="button" aria-label="关闭" onClick={onClose}>关闭</button>
         </div>
 
         <form className="user-editor-form" onSubmit={(event) => void submit(event)}>
           <label>
-            <span>用户名</span>
+            <span>姓名</span>
             <input
               autoFocus
               autoComplete="username"
               maxLength={255}
               value={values.userName}
               onChange={(event) => updateField("userName", event.target.value)}
-              placeholder="请输入用户名"
+              placeholder="请输入工作人员姓名"
             />
           </label>
           <label>
-            <span>岗位</span>
+            <span>手机号</span>
             <input
-              maxLength={64}
-              value={values.userType}
-              onChange={(event) => updateField("userType", event.target.value)}
-              placeholder="例如：道路管理员"
+              maxLength={32}
+              value={values.phone}
+              onChange={(event) => updateField("phone", event.target.value)}
+              placeholder="请输入移动端登录手机号"
+            />
+          </label>
+          <label>
+            <span>人员类别</span>
+            <select value={values.personnelCategory} onChange={(event) => updateField("personnelCategory", event.target.value)}>
+              <option value="traffic_police">交警执法</option>
+              <option value="road_maintenance">道路养护</option>
+              <option value="municipal_facilities">市政设施</option>
+              <option value="vehicle_rescue">清障救援</option>
+              <option value="traffic_coordination">交通疏导</option>
+              <option value="emergency_fire">应急消防</option>
+            </select>
+          </label>
+          <label>
+            <span>所属站点</span>
+            <input
+              maxLength={255}
+              value={values.site}
+              onChange={(event) => updateField("site", event.target.value)}
+              placeholder="例如：海淀交通支队"
             />
           </label>
           <label>
@@ -330,7 +364,7 @@ function UserEditor({
           <div className="user-form-actions">
             <button type="button" onClick={onClose}>取消</button>
             <button className="primary-user-button" type="submit" disabled={submitting}>
-              {submitting ? "正在保存" : mode === "create" ? "创建用户" : "保存修改"}
+              {submitting ? "正在保存" : mode === "create" ? "创建手机端用户" : "保存修改"}
             </button>
           </div>
         </form>
@@ -344,7 +378,7 @@ function DeleteUserDialog({
   onCancel,
   onConfirm,
 }: {
-  user: UserItem;
+  user: MobileUserItem;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -352,8 +386,8 @@ function DeleteUserDialog({
     <div className="user-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}>
       <div className="delete-user-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-user-title">
         <span>删除用户</span>
-        <h2 id="delete-user-title">确认删除“{user.user_name}”？</h2>
-        <p>此操作会从数据库中永久删除该用户，无法撤销。</p>
+        <h2 id="delete-user-title">确认删除“{user.name}”？</h2>
+        <p>此操作会删除该工作人员的移动端登录账号，且无法撤销。</p>
         <div className="user-form-actions">
           <button onClick={onCancel}>取消</button>
           <button className="confirm-delete-user-button" onClick={onConfirm}>确认删除</button>

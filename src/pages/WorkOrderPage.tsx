@@ -232,11 +232,8 @@ export function WorkOrderPage() {
       .catch((error) => setLoadError(error instanceof Error ? error.message : "上报审核失败"));
   };
 
-  const handleReviewFeedback = (order: WorkOrderItem, decision: "approve" | "reject") => {
-    const message = decision === "approve"
-      ? "电脑端复核通过。"
-      : window.prompt("请输入退回原因", "处置证据不足，请补充说明或现场照片。")?.trim();
-    if (decision === "reject" && !message) return;
+  const handleReviewFeedback = (order: WorkOrderItem, decision: "approve" | "reject", message: string) => {
+    if (!message.trim()) return;
     reviewWorkOrderFeedback(order.work_order_id, decision, message)
       .then(replaceOrder)
       .catch((error) => setLoadError(error instanceof Error ? error.message : "处置结果审核失败"));
@@ -481,7 +478,7 @@ export function WorkOrderPage() {
           onClose={() => setDetailOrder(null)}
           onAssign={() => setAssignOrder(detailOrder)}
           onUpdate={(patch) => handleUpdateOrder(detailOrder.work_order_id, patch)}
-          onReview={(decision) => handleReviewFeedback(detailOrder, decision)}
+          onReview={(decision, message) => handleReviewFeedback(detailOrder, decision, message)}
         />
       ) : null}
 
@@ -566,9 +563,23 @@ function OrderDetailModal({
   onClose: () => void;
   onAssign: () => void;
   onUpdate: (patch: Partial<WorkOrderItem>) => void;
-  onReview: (decision: "approve" | "reject") => void;
+  onReview: (decision: "approve" | "reject", message: string) => void;
 }) {
   const terminal = order.work_order_status !== 0;
+  const [reviewDecision, setReviewDecision] = useState<"approve" | "reject" | null>(null);
+  const [reviewMessage, setReviewMessage] = useState("");
+
+  const openReviewComposer = (decision: "approve" | "reject") => {
+    setReviewDecision(decision);
+    setReviewMessage("");
+  };
+
+  const submitReview = () => {
+    if (!reviewDecision || !reviewMessage.trim()) return;
+    onReview(reviewDecision, reviewMessage.trim());
+    setReviewDecision(null);
+    setReviewMessage("");
+  };
   return (
     <div className="surveillance-modal-backdrop" onClick={onClose}>
       <div className="order-detail-modal" onClick={(event) => event.stopPropagation()}>
@@ -601,11 +612,41 @@ function OrderDetailModal({
           </div>
         </div>
         {order.feedback_review_status === "pending" ? (
-          <div className="process-record feedback-review-panel">
-            <h3>手机端处置结果待审核</h3>
-            <p>{order.process_message || "手机端未填写处置说明。"}</p>
-            <div>{order.process_images?.map((image) => <img key={image} src={image} alt="手机端处置照片" />)}</div>
-            <div className="detail-actions"><button onClick={() => onReview("approve")}>审核通过</button><button className="ignore-order-button" onClick={() => onReview("reject")}>退回处理</button></div>
+          <div className={`feedback-review-layout ${reviewDecision ? "has-composer" : ""}`}>
+            <div className="process-record feedback-review-panel">
+              <h3>手机端处置结果待审核</h3>
+              <p>{order.process_message || "手机端未填写处置说明。"}</p>
+              <div>{order.process_images?.map((image) => <img key={image} src={image} alt="手机端处置照片" />)}</div>
+              <div className="detail-actions">
+                <button onClick={() => openReviewComposer("approve")}>审核通过</button>
+                <button className="ignore-order-button" onClick={() => openReviewComposer("reject")}>退回处理</button>
+              </div>
+            </div>
+            {reviewDecision ? (
+              <div className={`review-reason-card ${reviewDecision}`}>
+                <div className="review-reason-head">
+                  <div>
+                    <span>REVIEW MESSAGE</span>
+                    <h3>{reviewDecision === "approve" ? "填写通过理由" : "填写退回理由"}</h3>
+                  </div>
+                  <button className="review-card-close" onClick={() => setReviewDecision(null)} aria-label="关闭">X</button>
+                </div>
+                <label htmlFor="feedback-review-message">审核回复</label>
+                <textarea
+                  id="feedback-review-message"
+                  autoFocus
+                  value={reviewMessage}
+                  onChange={(event) => setReviewMessage(event.target.value)}
+                  placeholder={reviewDecision === "approve" ? "请输入审核通过理由，例如：现场处置完整，图片与报告一致。" : "请输入退回原因及需要补充的内容。"}
+                />
+                <div className="review-reason-actions">
+                  <button onClick={() => setReviewDecision(null)}>取消</button>
+                  <button disabled={!reviewMessage.trim()} onClick={submitReview}>
+                    {reviewDecision === "approve" ? "确认通过" : "确认退回"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
         {order.feedback_review_status === "rejected" ? <div className="process-record"><h3>最近一次处置结果已退回</h3><p>{order.feedback_review_message}</p></div> : null}

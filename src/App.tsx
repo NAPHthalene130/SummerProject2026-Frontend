@@ -4,6 +4,8 @@ import { HomePage } from "./pages/HomePage";
 import { MonitorPage } from "./pages/MonitorPage";
 import { UserPage } from "./pages/UserPage";
 import { WorkOrderPage } from "./pages/WorkOrderPage";
+import { AuthPage } from "./pages/AuthPage";
+import type { UserItem } from "./api/client";
 
 type ActivePage = "home" | "monitor" | "workOrder" | "users";
 
@@ -29,6 +31,11 @@ export default function App() {
 }
 
 function AppShell() {
+  const [currentUser, setCurrentUser] = useState<UserItem | null>(() => {
+    const storedUser = window.localStorage.getItem("traffic-admin-user");
+    if (!storedUser) return null;
+    try { return JSON.parse(storedUser) as UserItem; } catch { return null; }
+  });
   const [activePage, setActivePage] = useState<ActivePage>(() => pageFromHash());
 
   useEffect(() => {
@@ -36,6 +43,13 @@ function AppShell() {
     window.addEventListener("hashchange", syncFromHash);
     return () => window.removeEventListener("hashchange", syncFromHash);
   }, []);
+
+  if (!currentUser) {
+    return <AuthPage onAuthenticated={(user) => {
+      window.localStorage.setItem("traffic-admin-user", JSON.stringify(user));
+      setCurrentUser(user);
+    }} />;
+  }
 
   const navigate = (page: ActivePage) => {
     setActivePage(page);
@@ -69,6 +83,12 @@ function AppShell() {
               {item.label}
             </button>
           ))}
+          <button className="platform-account" onClick={() => {
+            window.localStorage.removeItem("traffic-admin-user");
+            setCurrentUser(null);
+          }} title={`当前用户：${currentUser.user_name}`}>
+            {currentUser.user_name} · 退出
+          </button>
         </nav>
       </header>
       <main className="platform-page">
