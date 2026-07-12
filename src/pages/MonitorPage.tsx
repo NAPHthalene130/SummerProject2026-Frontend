@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CameraPoint, RoadSegment } from "../data/standardRoadNetwork";
 import { useDataMode } from "../context/DataModeContext";
 import { useScenarioPlayback } from "../hooks/useScenarioPlayback";
@@ -380,6 +380,46 @@ function WebRTCTile({
 }) {
   const mjpegUrl = `/${view.camera.camera_id}`;
   const [imgError, setImgError] = useState(false);
+  const [boxes, setBoxes] = useState<{track_id: number; class_name: string; bbox: number[]}[]>([]);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const fetchBoxes = async () => {
+      try {
+        const res = await fetch(`/api/v1/cameras/${view.camera.camera_id}/boxes`);
+        const data = await res.json();
+        setBoxes(data.boxes || []);
+      } catch {}
+    };
+    fetchBoxes();
+    const timer = setInterval(fetchBoxes, 1000);
+    return () => clearInterval(timer);
+  }, [view.camera.camera_id]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img || !img.complete) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    canvas.width = img.clientWidth;
+    canvas.height = img.clientHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const sx = canvas.width / 640;
+    const sy = canvas.height / 480;
+    const COLORS = ["#ff4444","#44ff44","#4488ff","#ffaa00","#ff44ff","#44ffff"];
+    boxes.forEach((b, i) => {
+      const [x1, y1, x2, y2] = b.bbox;
+      ctx.strokeStyle = COLORS[i % COLORS.length];
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x1 * sx, y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
+      ctx.fillStyle = COLORS[i % COLORS.length];
+      ctx.font = "12px monospace";
+      const label = `${b.class_name} #${b.track_id}`;
+      ctx.fillText(label, x1 * sx + 2, y1 * sy - 4);
+    });
+  }, [boxes]);
 
   const hasSegment = view.segment !== null;
   const statusText = hasSegment ? getRiskText(view.segment!.status) : "在线";
@@ -401,18 +441,27 @@ function WebRTCTile({
         {hasSegment ? (
           <div className="status-ribbon" style={{ background: borderColor }}>{getRiskText(view.segment!.status)}</div>
         ) : null}
-        {imgError ? (
-          <div className="webrtc-placeholder">
-            <span style={{ color: "#ff8a80" }}>连接失败</span>
-          </div>
-        ) : (
-          <img
-            src={mjpegUrl}
-            alt={view.camera.name}
+        <div style={{ position: "relative" }}>
+          {imgError ? (
+            <div className="webrtc-placeholder">
+              <span style={{ color: "#ff8a80" }}>连接失败</span>
+            </div>
+          ) : (
+            <img
+              ref={imgRef}
+              src={mjpegUrl}
+              alt={view.camera.name}
+              className="monitor-live-video"
+              style={{ display: "block" }}
+              onError={() => setImgError(true)}
+            />
+          )}
+          <canvas
+            ref={canvasRef}
             className="monitor-live-video"
-            onError={() => setImgError(true)}
+            style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }}
           />
-        )}
+        </div>
         <div className="video-caption">
           <b>{view.camera.name}</b>
           {hasSegment ? <span>{view.segment!.name}</span> : null}
@@ -687,6 +736,45 @@ function DemoMonitorModal({ view, onClose }: { view: CameraView; onClose: () => 
 function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: CameraView; vehicleCount: number; onClose: () => void }) {
   const mjpegUrl = `/${cameraView.camera.camera_id}`;
   const [imgError, setImgError] = useState(false);
+  const [boxes, setBoxes] = useState<{track_id: number; class_name: string; bbox: number[]}[]>([]);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const fetchBoxes = async () => {
+      try {
+        const res = await fetch(`/api/v1/cameras/${cameraView.camera.camera_id}/boxes`);
+        const data = await res.json();
+        setBoxes(data.boxes || []);
+      } catch {}
+    };
+    fetchBoxes();
+    const timer = setInterval(fetchBoxes, 800);
+    return () => clearInterval(timer);
+  }, [cameraView.camera.camera_id]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img || !img.complete) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    canvas.width = img.clientWidth;
+    canvas.height = img.clientHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const sx = canvas.width / 640;
+    const sy = canvas.height / 480;
+    const COLORS = ["#ff4444","#44ff44","#4488ff","#ffaa00","#ff44ff","#44ffff"];
+    boxes.forEach((b, i) => {
+      const [x1, y1, x2, y2] = b.bbox;
+      ctx.strokeStyle = COLORS[i % COLORS.length];
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x1 * sx, y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
+      ctx.fillStyle = COLORS[i % COLORS.length];
+      ctx.font = "12px monospace";
+      ctx.fillText(`${b.class_name} #${b.track_id}`, x1 * sx + 2, y1 * sy - 4);
+    });
+  }, [boxes]);
 
   const handleClose = () => {
     onClose();
@@ -700,15 +788,22 @@ function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: C
           <div className="live-badge">LIVE</div>
           <h2>{cameraView.camera.name}</h2>
           <p>{cameraView.streamLabel} · {cameraView.channel}</p>
-          {imgError ? (
-            <div className="risk-warning" style={{ marginTop: 12 }}>视频流加载失败</div>
-          ) : null}
-          <img
-            src={mjpegUrl}
-            alt={cameraView.camera.name}
-            style={{ width: "100%", height: "auto", maxHeight: 360, display: "block", marginTop: 8 }}
-            onError={() => setImgError(true)}
-          />
+          <div style={{ position: "relative" }}>
+            {imgError ? (
+              <div className="risk-warning" style={{ marginTop: 12 }}>视频流加载失败</div>
+            ) : null}
+            <img
+              ref={imgRef}
+              src={mjpegUrl}
+              alt={cameraView.camera.name}
+              style={{ width: "100%", height: "auto", maxHeight: 360, display: "block", marginTop: 8 }}
+              onError={() => setImgError(true)}
+            />
+            <canvas
+              ref={canvasRef}
+              style={{ position: "absolute", top: 8, left: 0, width: "100%", height: "auto", maxHeight: 360, pointerEvents: "none" }}
+            />
+          </div>
         </div>
         <div className="modal-video-info">
           <div><span>摄像头ID</span><b>{cameraView.camera.camera_id}</b></div>
