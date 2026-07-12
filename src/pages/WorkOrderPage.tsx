@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { dispatchWorkOrder, fetchStaff, fetchWorkOrders, updateWorkOrderStatus } from "../api/client";
+import { convertMobileReport, deleteStaff, dispatchWorkOrder, fetchMobileReports, fetchStaff, fetchWorkOrders, updateWorkOrderStatus, type MobileReport } from "../api/client";
 import { useDataMode } from "../context/DataModeContext";
 import { mockStaff, type StaffMember } from "../data/mockStaff";
 import { mockWorkOrders, type WorkOrderItem } from "../data/mockWorkOrders";
@@ -7,6 +7,18 @@ import { getLevelText } from "../utils/riskStyle";
 
 type FilterKey = "unresolved" | "completed" | "ignored" | "all";
 const WORK_ORDER_REFRESH_INTERVAL_MS = 5_000;
+const PERSONNEL_CATEGORIES = [
+  ["traffic_police", "交警执法", "超速、违停、事故管制"],
+  ["road_maintenance", "道路养护", "坑洼、护栏、标线、施工"],
+  ["municipal_facilities", "市政设施", "井盖、路灯、信号设施"],
+  ["vehicle_rescue", "清障救援", "故障车、事故车辆清障"],
+  ["traffic_coordination", "交通疏导", "拥堵、大型活动疏导"],
+  ["emergency_fire", "应急消防", "火灾、危化品、重大事故"],
+] as const;
+
+function categoryName(code?: string) {
+  return PERSONNEL_CATEGORIES.find(([value]) => value === code)?.[1] ?? "未分类";
+}
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -26,10 +38,21 @@ export function WorkOrderPage() {
   const [staffLoading, setStaffLoading] = useState(() => !demoDataEnabled);
   const [loadError, setLoadError] = useState("");
   const [staffLoadError, setStaffLoadError] = useState("");
+  const [mobileReports, setMobileReports] = useState<MobileReport[]>([]);
+  const [convertReport, setConvertReport] = useState<MobileReport | null>(null);
+  const [convertCategory, setConvertCategory] = useState("traffic_police");
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "system", text: "AI 处置助手已接入。选择左侧工单后，我会结合事件等级、道路状态和处置记录给出建议。" },
   ]);
+
+  useEffect(() => {
+    let active = true;
+    const load = () => fetchMobileReports().then((reports) => active && setMobileReports(reports)).catch(() => active && setMobileReports([]));
+    void load();
+    const timer = window.setInterval(load, WORK_ORDER_REFRESH_INTERVAL_MS);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,9 +82,7 @@ export function WorkOrderPage() {
     setStaffLoadError("");
     setDetailOrder(null);
     setAssignOrder(null);
-    setMessages([
-      { role: "system", text: "生产数据源模式：正在读取后端工单、人员和派发记录。" },
-    ]);
+    setMessages([]);
 
     const loadWorkOrders = async (showLoading: boolean) => {
       if (workOrdersRequestInFlight) return;
@@ -196,6 +217,25 @@ export function WorkOrderPage() {
       });
   };
 
+  const handleConvertReport = (report: MobileReport) => {
+    convertMobileReport(report.report_id, convertCategory)
+      .then(() => fetchWorkOrders())
+      .then((items) => { setOrders(items); setMobileReports((reports) => reports.filter((item) => item.report_id !== report.report_id)); setConvertReport(null); })
+      .catch((error) => setLoadError(error instanceof Error ? error.message : "上报转工单失败"));
+  };
+
+  const handleDeleteStaff = (staff: StaffMember) => {
+    if (!window.confirm(`确定删除“${staff.name}”吗？其未完成工单将恢复为待派发。`)) return;
+    deleteStaff(staff.id)
+      .then(() => {
+        setStaffMembers((items) => items.filter((item) => item.id !== staff.id));
+        setSelectedStaff(null);
+        return fetchWorkOrders();
+      })
+      .then(setOrders)
+      .catch((error) => setStaffLoadError(error instanceof Error ? error.message : "删除人员失败"));
+  };
+
   const handleUpdateOrder = (id: string, patch: Partial<WorkOrderItem>) => {
     if (demoDataEnabled || !patch.status) {
       updateOrder(id, patch);
@@ -286,6 +326,15 @@ export function WorkOrderPage() {
       </aside>
 
       <main className="dispatch-list">
+        <section className="mobile-report-inbox">
+          <div className="dispatch-list-head"><div><span>ANDROID REPORTS</span><h2>移动端待审核上报</h2></div><b>{mobileReports.length} 条</b></div>
+          {mobileReports.map((report) => <article className="dispatch-row" key={report.report_id}>
+            <div className="row-status-line"><span className={`level-dot ${report.severity}`} /><b>上报 #{report.report_id}</b><em className="status-chip pending">待审核</em></div>
+            <h3>{report.title}</h3><p>{report.location} · {report.reporter_name}</p><p>{report.detail}</p>
+            <div className="row-actions"><button onClick={() => { setConvertCategory("traffic_police"); setConvertReport(report); }}>审核并转为工单</button></div>
+          </article>)}
+          {mobileReports.length === 0 ? <small>暂无 Android 待审核上报</small> : null}
+        </section>
         <div className="dispatch-list-head">
           <div>
             <span>WORK ORDERS</span>
@@ -353,6 +402,7 @@ export function WorkOrderPage() {
                 <span>等级 {getLevelText(order.event_level)}</span>
                 <span>摄像头 {order.camera_name}</span>
                 <span>派发 {order.assignee ?? "未派发"}</span>
+                <span className="category-badge">要求 {categoryName(order.required_category)}</span>
               </div>
               <div className="row-actions">
                 {order.status === "unassigned" ? <button onClick={(event) => { event.stopPropagation(); setAssignOrder(order); }}>派发</button> : null}
@@ -438,7 +488,24 @@ export function WorkOrderPage() {
             setSelectedStaff(null);
             setDetailOrder(order);
           }}
+          onDelete={() => handleDeleteStaff(selectedStaff)}
         />
+      ) : null}
+
+      {convertReport ? (
+        <div className="surveillance-modal-backdrop" onClick={() => setConvertReport(null)}>
+          <div className="assign-dialog category-convert-dialog" onClick={(event) => event.stopPropagation()}>
+            <span className="dialog-kicker">ANDROID REPORT #{convertReport.report_id}</span>
+            <h2>审核上报并生成工单</h2>
+            <p><b>{convertReport.title}</b></p><p>{convertReport.location}</p><p>{convertReport.detail}</p>
+            <div className="personnel-category-grid">
+              {PERSONNEL_CATEGORIES.map(([code, name, scope]) => <button key={code} className={convertCategory === code ? "active" : ""} onClick={() => setConvertCategory(code)}>
+                <b>{name}</b><span>{scope}</span>
+              </button>)}
+            </div>
+            <div className="dialog-actions"><button onClick={() => handleConvertReport(convertReport)}>生成 {categoryName(convertCategory)} 工单</button><button onClick={() => setConvertReport(null)}>取消</button></div>
+          </div>
+        </div>
       ) : null}
     </section>
   );
@@ -455,21 +522,24 @@ function AssignDialog({
   onClose: () => void;
   onConfirm: (staff: StaffMember) => void;
 }) {
-  const defaultStaff = staffMembers.find((staff) => staff.status === "idle") ?? staffMembers[0] ?? null;
+  const matchedStaff = staffMembers.filter((staff) => !order.required_category || staff.personnel_category === order.required_category);
+  const defaultStaff = matchedStaff.find((staff) => staff.status === "idle") ?? matchedStaff[0] ?? null;
   const [staffId, setStaffId] = useState(defaultStaff?.id ?? "");
-  const selectedStaff = staffMembers.find((staff) => staff.id === staffId) ?? null;
+  const selectedStaff = matchedStaff.find((staff) => staff.id === staffId) ?? null;
 
   return (
     <div className="surveillance-modal-backdrop" onClick={onClose}>
       <div className="assign-dialog" onClick={(event) => event.stopPropagation()}>
         <h2>派发工单</h2>
         <p>{order.work_order_id} · {order.accident_info}</p>
+        <p className="assignment-requirement">要求人员类别：<b>{categoryName(order.required_category)}</b></p>
         <label>
           选择处理人员
           <select value={staffId} onChange={(event) => setStaffId(event.target.value)}>
-            {staffMembers.map((staff) => <option key={staff.id} value={staff.id}>{staff.name} · {staff.role} · {staff.status === "idle" ? "空闲" : "忙碌"}</option>)}
+            {matchedStaff.map((staff) => <option key={staff.id} value={staff.id}>{staff.name} · {staff.role} · {staff.status === "idle" ? "空闲" : "忙碌"}</option>)}
           </select>
         </label>
+        {matchedStaff.length === 0 ? <p className="assignment-warning">当前没有注册为“{categoryName(order.required_category)}”的人员，无法派发。</p> : null}
         <div className="dialog-actions">
           <button disabled={!selectedStaff} onClick={() => selectedStaff && onConfirm(selectedStaff)}>确认派发</button>
           <button onClick={onClose}>取消</button>
@@ -579,11 +649,13 @@ function StaffDetailModal({
   pendingOrders,
   onClose,
   onSelectOrder,
+  onDelete,
 }: {
   staff: StaffMember;
   pendingOrders: WorkOrderItem[];
   onClose: () => void;
   onSelectOrder: (order: WorkOrderItem) => void;
+  onDelete: () => void;
 }) {
   return (
     <div className="surveillance-modal-backdrop" onClick={onClose}>
@@ -616,6 +688,7 @@ function StaffDetailModal({
           ) : null}
         </div>
         <div className="staff-detail-actions">
+          <button className="delete-staff-button" onClick={onDelete}>删除人员</button>
           <button onClick={onClose}>关闭</button>
         </div>
       </div>
