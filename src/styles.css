@@ -1378,6 +1378,18 @@ body,
   color: var(--final-ink) !important;
 }
 
+.staff-category-code, .category-badge { display:inline-flex; width:max-content; margin-top:3px; padding:2px 7px; border-radius:999px; background:#e8f1ff; color:#2466b3; font-size:11px; font-weight:700; }
+.category-convert-dialog { width:min(760px, 92vw); }
+.dialog-kicker { color:#2878e6; font-size:12px; font-weight:800; letter-spacing:.08em; }
+.personnel-category-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:16px 0; }
+.personnel-category-grid button { display:flex; flex-direction:column; align-items:flex-start; gap:4px; padding:13px; border:1px solid #d6dfec; border-radius:12px; background:white; color:#1f2b3a; cursor:pointer; }
+.personnel-category-grid button.active { border-color:#2878e6; background:#eaf3ff; box-shadow:0 0 0 2px rgba(40,120,230,.12); }
+.personnel-category-grid button span { color:#667488; font-size:12px; }
+.assignment-requirement { padding:9px 12px; border-radius:9px; background:#edf5ff; color:#245d9c; }
+.assignment-warning { color:#b42318; background:#fff0ee; border-radius:8px; padding:9px; }
+.staff-detail-actions .delete-staff-button { color:#b42318; border-color:#f2b8b5; background:#fff1f0; }
+.staff-detail-actions .delete-staff-button:hover { background:#ffe2df; }
+
 .full-map-shell,
 .full-map,
 .leaflet-container {
