@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { convertMobileReport, deleteStaff, dispatchWorkOrder, fetchMobileReports, fetchStaff, fetchWorkOrders, updateWorkOrderStatus, type MobileReport } from "../api/client";
+import { convertMobileReport, dispatchWorkOrder, fetchMobileReports, fetchStaff, fetchWorkOrders, rejectMobileReport, reviewWorkOrderFeedback, updateWorkOrderStatus, type MobileReport } from "../api/client";
 import { useDataMode } from "../context/DataModeContext";
 import { mockStaff, type StaffMember } from "../data/mockStaff";
 import { mockWorkOrders, type WorkOrderItem } from "../data/mockWorkOrders";
@@ -224,16 +224,22 @@ export function WorkOrderPage() {
       .catch((error) => setLoadError(error instanceof Error ? error.message : "上报转工单失败"));
   };
 
-  const handleDeleteStaff = (staff: StaffMember) => {
-    if (!window.confirm(`确定删除“${staff.name}”吗？其未完成工单将恢复为待派发。`)) return;
-    deleteStaff(staff.id)
-      .then(() => {
-        setStaffMembers((items) => items.filter((item) => item.id !== staff.id));
-        setSelectedStaff(null);
-        return fetchWorkOrders();
-      })
-      .then(setOrders)
-      .catch((error) => setStaffLoadError(error instanceof Error ? error.message : "删除人员失败"));
+  const handleRejectReport = (report: MobileReport) => {
+    const reason = window.prompt("请输入不通过原因", "现场信息不足，请补充后重新上报。");
+    if (!reason?.trim()) return;
+    rejectMobileReport(report.report_id, reason.trim())
+      .then(() => setMobileReports((items) => items.filter((item) => item.report_id !== report.report_id)))
+      .catch((error) => setLoadError(error instanceof Error ? error.message : "上报审核失败"));
+  };
+
+  const handleReviewFeedback = (order: WorkOrderItem, decision: "approve" | "reject") => {
+    const message = decision === "approve"
+      ? "电脑端复核通过。"
+      : window.prompt("请输入退回原因", "处置证据不足，请补充说明或现场照片。")?.trim();
+    if (decision === "reject" && !message) return;
+    reviewWorkOrderFeedback(order.work_order_id, decision, message)
+      .then(replaceOrder)
+      .catch((error) => setLoadError(error instanceof Error ? error.message : "处置结果审核失败"));
   };
 
   const handleUpdateOrder = (id: string, patch: Partial<WorkOrderItem>) => {
@@ -331,7 +337,7 @@ export function WorkOrderPage() {
           {mobileReports.map((report) => <article className="dispatch-row" key={report.report_id}>
             <div className="row-status-line"><span className={`level-dot ${report.severity}`} /><b>上报 #{report.report_id}</b><em className="status-chip pending">待审核</em></div>
             <h3>{report.title}</h3><p>{report.location} · {report.reporter_name}</p><p>{report.detail}</p>
-            <div className="row-actions"><button onClick={() => { setConvertCategory("traffic_police"); setConvertReport(report); }}>审核并转为工单</button></div>
+            <div className="row-actions"><button onClick={() => { setConvertCategory("traffic_police"); setConvertReport(report); }}>转为工单</button><button className="ignore-order-button" onClick={() => handleRejectReport(report)}>不通过</button></div>
           </article>)}
           {mobileReports.length === 0 ? <small>暂无 Android 待审核上报</small> : null}
         </section>
@@ -475,6 +481,7 @@ export function WorkOrderPage() {
           onClose={() => setDetailOrder(null)}
           onAssign={() => setAssignOrder(detailOrder)}
           onUpdate={(patch) => handleUpdateOrder(detailOrder.work_order_id, patch)}
+          onReview={(decision) => handleReviewFeedback(detailOrder, decision)}
         />
       ) : null}
 
@@ -488,7 +495,6 @@ export function WorkOrderPage() {
             setSelectedStaff(null);
             setDetailOrder(order);
           }}
-          onDelete={() => handleDeleteStaff(selectedStaff)}
         />
       ) : null}
 
@@ -554,11 +560,13 @@ function OrderDetailModal({
   onClose,
   onAssign,
   onUpdate,
+  onReview,
 }: {
   order: WorkOrderItem;
   onClose: () => void;
   onAssign: () => void;
   onUpdate: (patch: Partial<WorkOrderItem>) => void;
+  onReview: (decision: "approve" | "reject") => void;
 }) {
   const terminal = order.work_order_status !== 0;
   return (
@@ -592,6 +600,15 @@ function OrderDetailModal({
             <span>当前状态</span><b>{statusText(order.status)}</b>
           </div>
         </div>
+        {order.feedback_review_status === "pending" ? (
+          <div className="process-record feedback-review-panel">
+            <h3>手机端处置结果待审核</h3>
+            <p>{order.process_message || "手机端未填写处置说明。"}</p>
+            <div>{order.process_images?.map((image) => <img key={image} src={image} alt="手机端处置照片" />)}</div>
+            <div className="detail-actions"><button onClick={() => onReview("approve")}>审核通过</button><button className="ignore-order-button" onClick={() => onReview("reject")}>退回处理</button></div>
+          </div>
+        ) : null}
+        {order.feedback_review_status === "rejected" ? <div className="process-record"><h3>最近一次处置结果已退回</h3><p>{order.feedback_review_message}</p></div> : null}
         {terminal ? (
           <div className="process-record">
             <h3>{order.work_order_status === 2 ? "忽略记录" : "处理记录"}</h3>
@@ -649,13 +666,11 @@ function StaffDetailModal({
   pendingOrders,
   onClose,
   onSelectOrder,
-  onDelete,
 }: {
   staff: StaffMember;
   pendingOrders: WorkOrderItem[];
   onClose: () => void;
   onSelectOrder: (order: WorkOrderItem) => void;
-  onDelete: () => void;
 }) {
   return (
     <div className="surveillance-modal-backdrop" onClick={onClose}>
@@ -688,7 +703,6 @@ function StaffDetailModal({
           ) : null}
         </div>
         <div className="staff-detail-actions">
-          <button className="delete-staff-button" onClick={onDelete}>删除人员</button>
           <button onClick={onClose}>关闭</button>
         </div>
       </div>

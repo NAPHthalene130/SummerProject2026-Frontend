@@ -22,6 +22,9 @@ export interface WorkOrderItem {
   process_images?: string[];
   completed_at?: string;
   required_category?: string;
+  feedback_review_status?: "none" | "pending" | "approved" | "rejected";
+  feedback_requested_status?: "completed" | "ignored";
+  feedback_review_message?: string;
 }
 
 export const mockFrontendEvents: TrafficEvent[] = [

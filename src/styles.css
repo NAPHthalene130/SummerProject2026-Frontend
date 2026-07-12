@@ -1387,8 +1387,6 @@ body,
 .personnel-category-grid button span { color:#667488; font-size:12px; }
 .assignment-requirement { padding:9px 12px; border-radius:9px; background:#edf5ff; color:#245d9c; }
 .assignment-warning { color:#b42318; background:#fff0ee; border-radius:8px; padding:9px; }
-.staff-detail-actions .delete-staff-button { color:#b42318; border-color:#f2b8b5; background:#fff1f0; }
-.staff-detail-actions .delete-staff-button:hover { background:#ffe2df; }
 
 .full-map-shell,
 .full-map,

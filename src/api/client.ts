@@ -56,6 +56,7 @@ export interface MobileReport {
   location: string; detail: string; severity: "low" | "medium" | "high";
   event_type: string; image_urls: string[]; status: "pending" | "converted" | "rejected";
   created_at: string; work_order_id?: string;
+  review_message?: string; reviewed_at?: string;
 }
 
 class ApiError extends Error {
@@ -130,10 +131,6 @@ export function fetchStaff(): Promise<StaffMember[]> {
   return request<StaffMember[]>("/api/v1/staff/");
 }
 
-export function deleteStaff(userId: string): Promise<{ deleted: boolean; user_id: number }> {
-  return request(`/api/v1/staff/${encodeURIComponent(userId)}`, { method: "DELETE" });
-}
-
 export function fetchMobileReports(): Promise<MobileReport[]> {
   return request<MobileReport[]>("/api/v1/mobile-reports?status=pending");
 }
@@ -142,6 +139,24 @@ export function convertMobileReport(reportId: number, requiredCategory: string):
   return request<MobileReport>(`/api/v1/mobile-reports/${reportId}/convert`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ required_category: requiredCategory }),
+  });
+}
+
+export function rejectMobileReport(reportId: number, reviewMessage: string): Promise<MobileReport> {
+  return request<MobileReport>(`/api/v1/mobile-reports/${reportId}/reject`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ review_message: reviewMessage }),
+  });
+}
+
+export function reviewWorkOrderFeedback(
+  workOrderId: string,
+  decision: "approve" | "reject",
+  reviewMessage?: string,
+): Promise<WorkOrderItem> {
+  return request<WorkOrderItem>(`/api/v1/work-orders/${encodeURIComponent(workOrderId)}/feedback-review`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision, review_message: reviewMessage }),
   });
 }
 
