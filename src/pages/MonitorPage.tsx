@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CameraPoint, RoadSegment } from "../data/standardRoadNetwork";
 import { useDataMode } from "../context/DataModeContext";
 import { useScenarioPlayback } from "../hooks/useScenarioPlayback";
 import type { TrafficEvent } from "../types/business";
 import { getRiskColor, getRiskText, getTrafficFlowColor } from "../utils/riskStyle";
-import { fetchCameras, fetchCameraStats, postLiveOffer, type BackendCamera } from "../api/client";
+import { fetchCameras, fetchCameraStats, type BackendCamera } from "../api/client";
 
 interface CameraView {
   camera: CameraPoint;
@@ -378,19 +378,8 @@ function WebRTCTile({
   onToggleExpand: (id: string) => void;
   onSelect: (view: CameraView) => void;
 }) {
-  const { stream, connecting, error, connect, disconnect } = useWebRTC(view.camera.camera_id);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    connect();
-    return () => { disconnect(); };
-  }, []);
-
-  useEffect(() => {
-    if (stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
-    }
-  }, [stream]);
+  const mjpegUrl = `/api/v1/live/${view.camera.camera_id}/mjpeg`;
+  const [imgError, setImgError] = useState(false);
 
   const hasSegment = view.segment !== null;
   const statusText = hasSegment ? getRiskText(view.segment!.status) : "在线";
@@ -412,23 +401,18 @@ function WebRTCTile({
         {hasSegment ? (
           <div className="status-ribbon" style={{ background: borderColor }}>{getRiskText(view.segment!.status)}</div>
         ) : null}
-        {connecting ? (
-          <div className="webrtc-placeholder">
-            <span style={{ color: "#72d4ff" }}>连接中…</span>
-          </div>
-        ) : error ? (
+        {imgError ? (
           <div className="webrtc-placeholder">
             <span style={{ color: "#ff8a80" }}>连接失败</span>
           </div>
-        ) : stream ? (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
+        ) : (
+          <img
+            src={mjpegUrl}
+            alt={view.camera.name}
             className="monitor-live-video"
+            onError={() => setImgError(true)}
           />
-        ) : null}
+        )}
         <div className="video-caption">
           <b>{view.camera.name}</b>
           {hasSegment ? <span>{view.segment!.name}</span> : null}
@@ -700,82 +684,11 @@ function DemoMonitorModal({ view, onClose }: { view: CameraView; onClose: () => 
   );
 }
 
-function useWebRTC(cameraId: string) {
-  const pcRef = useRef<RTCPeerConnection | null>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const connect = useCallback(async () => {
-    setConnecting(true);
-    setError(null);
-    setStream(null);
-
-    try {
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-      });
-      pcRef.current = pc;
-
-      pc.addTransceiver("video", { direction: "recvonly" });
-
-      pc.ontrack = (event) => {
-        if (event.streams[0]) {
-          setStream(event.streams[0]);
-        }
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "disconnected") {
-          setError("WebRTC 连接已断开");
-        }
-      };
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      const answer = await postLiveOffer(cameraId, {
-        sdp: offer.sdp ?? "",
-        type: offer.type ?? "offer",
-      });
-
-      await pc.setRemoteDescription(new RTCSessionDescription(answer as RTCSessionDescriptionInit));
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "WebRTC 连接失败");
-    } finally {
-      setConnecting(false);
-    }
-  }, [cameraId]);
-
-  const disconnect = useCallback(() => {
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-    setStream(null);
-    setError(null);
-  }, []);
-
-  return { stream, connecting, error, connect, disconnect };
-}
-
 function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: CameraView; vehicleCount: number; onClose: () => void }) {
-  const { stream, connecting, error, connect, disconnect } = useWebRTC(cameraView.camera.camera_id);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    connect();
-    return () => { disconnect(); };
-  }, []);
-
-  useEffect(() => {
-    if (stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
-    }
-  }, [stream]);
+  const mjpegUrl = `/api/v1/live/${cameraView.camera.camera_id}/mjpeg`;
+  const [imgError, setImgError] = useState(false);
 
   const handleClose = () => {
-    disconnect();
     onClose();
   };
 
@@ -787,22 +700,15 @@ function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: C
           <div className="live-badge">LIVE</div>
           <h2>{cameraView.camera.name}</h2>
           <p>{cameraView.streamLabel} · {cameraView.channel}</p>
-          {error ? (
-            <div className="risk-warning" style={{ marginTop: 12 }}>{error}</div>
+          {imgError ? (
+            <div className="risk-warning" style={{ marginTop: 12 }}>视频流加载失败</div>
           ) : null}
-          {connecting ? (
-            <span style={{ color: "#72d4ff" }}>正在建立 WebRTC 连接…</span>
-          ) : stream ? (
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              style={{ width: "100%", height: "auto", maxHeight: 360, display: "block", marginTop: 8 }}
-            />
-          ) : (
-            <span style={{ color: "#aaa" }}>等待视频流…</span>
-          )}
+          <img
+            src={mjpegUrl}
+            alt={cameraView.camera.name}
+            style={{ width: "100%", height: "auto", maxHeight: 360, display: "block", marginTop: 8 }}
+            onError={() => setImgError(true)}
+          />
         </div>
         <div className="modal-video-info">
           <div><span>摄像头ID</span><b>{cameraView.camera.camera_id}</b></div>
