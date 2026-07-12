@@ -385,16 +385,15 @@ function WebRTCTile({
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const fetchBoxes = async () => {
+    const es = new EventSource("/api/v1/cameras/boxes/stream");
+    es.onmessage = (e) => {
       try {
-        const res = await fetch(`/api/v1/cameras/${view.camera.camera_id}/boxes`);
-        const data = await res.json();
-        setBoxes(data.boxes || []);
+        const all = JSON.parse(e.data);
+        const camBoxes = all[view.camera.camera_id];
+        if (camBoxes) setBoxes(camBoxes);
       } catch {}
     };
-    fetchBoxes();
-    const timer = setInterval(fetchBoxes, 1000);
-    return () => clearInterval(timer);
+    return () => es.close();
   }, [view.camera.camera_id]);
 
   useEffect(() => {
@@ -741,16 +740,15 @@ function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: C
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const fetchBoxes = async () => {
+    const es = new EventSource("/api/v1/cameras/boxes/stream");
+    es.onmessage = (e) => {
       try {
-        const res = await fetch(`/api/v1/cameras/${cameraView.camera.camera_id}/boxes`);
-        const data = await res.json();
-        setBoxes(data.boxes || []);
+        const all = JSON.parse(e.data);
+        const camBoxes = all[cameraView.camera.camera_id];
+        if (camBoxes) setBoxes(camBoxes);
       } catch {}
     };
-    fetchBoxes();
-    const timer = setInterval(fetchBoxes, 800);
-    return () => clearInterval(timer);
+    return () => es.close();
   }, [cameraView.camera.camera_id]);
 
   useEffect(() => {
