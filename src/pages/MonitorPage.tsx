@@ -55,6 +55,7 @@ function setCached(cams: BackendCamera[]) {
 export function MonitorPage() {
   const scenario = useScenarioPlayback();
   const { demoDataEnabled } = useDataMode();
+  const streamState = useStreamState();
   const [page, setPage] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [activeCamera, setActiveCamera] = useState<CameraView | null>(null);
@@ -159,6 +160,14 @@ export function MonitorPage() {
     ["事故", wallStats.danger, "#EA4335"],
   ] as const;
 
+  const totalVehicles = demoDataEnabled ? 0 : Object.values(streamState.boxes).reduce((s, b) => s + b.length, 0);
+  const totalLanes = demoDataEnabled ? 0 : Object.values(streamState.lanes).reduce((s, v) => s + v, 0);
+  const totalAvgSpeed = demoDataEnabled ? 0 : (() => {
+    const speeds = Object.values(streamState.boxes).flat().map(b => b.class_name ? 40 : 0);
+    const all = Object.values(streamState.traffic);
+    return all.length > 0 ? Math.round(all.reduce((s, t) => s + (t.flow_per_min || 0), 0) / all.length) : 0;
+  })();
+
   const isBackendEmpty = !demoDataEnabled && !backendLoading && !backendError && backendCameras.length === 0;
 
   return (
@@ -261,10 +270,9 @@ export function MonitorPage() {
 
             <div className="monitor-wall-grid">
               {pageItems.map((view) => (
-                <WebRTCTile
+                <MonitorTile
                   key={view.camera.camera_id}
                   view={view}
-                  vehicleCount={vehicleCountMap[view.camera.camera_id] ?? 0}
                   expandedId={expandedId}
                   onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
                   onSelect={setActiveCamera}
@@ -274,12 +282,12 @@ export function MonitorPage() {
 
             <MonitorTelemetryRail
               side="right"
-              kicker="ALARM"
-              title="预警与工况"
+              kicker="STATS"
+              title="实时状态"
               metrics={[
-                { label: "事故告警", value: "0", unit: "起", tone: "#ff8a80" },
-                { label: "高风险", value: "0", unit: "处", tone: "#ffb74d" },
-                { label: "接入状态", value: "READY", unit: "WebRTC", tone: "#81c784" },
+                { label: "识别车辆", value: String(totalVehicles), unit: "辆", tone: "#72d4ff" },
+                { label: "平均车速", value: String(totalAvgSpeed), unit: "km/h", tone: "#6ee7a8" },
+                { label: "总车道", value: String(totalLanes), unit: "条", tone: "#24c1e0" },
               ]}
               distribution={[]}
             />
