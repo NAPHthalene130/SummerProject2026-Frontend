@@ -15,12 +15,13 @@ interface TrafficFlow {
 interface StreamState {
   boxes: Record<string, BoxData[]>;
   traffic: Record<string, TrafficFlow>;
+  lanes: Record<string, number>;
 }
 
 const StreamContext = createContext<StreamState>({ boxes: {}, traffic: {} });
 
 export function StreamProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<StreamState>({ boxes: {}, traffic: {} });
+  const [state, setState] = useState<StreamState>({ boxes: {}, traffic: {}, lanes: {} });
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -29,8 +30,8 @@ export function StreamProvider({ children }: { children: React.ReactNode }) {
     es.onmessage = (e) => {
       try {
         const all = JSON.parse(e.data);
-        const { _traffic, ...boxes } = all;
-        setState({ boxes, traffic: _traffic || {} });
+        const { _traffic, _lanes, ...boxes } = all;
+        setState({ boxes, traffic: _traffic || {}, lanes: _lanes || {} });
       } catch {}
     };
     return () => {

@@ -390,6 +390,7 @@ function WebRTCTile({
   const streamState = useStreamState();
   const boxes = streamState.boxes[view.camera.camera_id] || [];
   const trafficFlow = streamState.traffic[view.camera.camera_id] || null;
+  const laneCount = streamState.lanes[view.camera.camera_id] ?? 0;
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -443,7 +444,7 @@ function WebRTCTile({
         {hasSegment ? (
           <div className="status-ribbon" style={{ background: borderColor }}>{getRiskText(view.segment!.status)}</div>
         ) : null}
-        <div style={{ position: "relative" }}>
+        <div style={{ position: "relative", width: "100%", height: "100%", minHeight: 160 }}>
           {imgError ? (
             <div className="webrtc-placeholder">
               <span style={{ color: "#ff8a80" }}>连接失败</span>
@@ -454,14 +455,14 @@ function WebRTCTile({
               src={mjpegUrl}
               alt={view.camera.name}
               className="monitor-live-video"
-              style={{ display: "block" }}
+              style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
               onError={() => setImgError(true)}
             />
           )}
           <canvas
             ref={canvasRef}
             className="monitor-live-video"
-            style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }}
+            style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" }}
           />
         </div>
         <div className="video-caption">
@@ -480,8 +481,8 @@ function WebRTCTile({
         ) : (
           <>
             <span>识别车辆 {vehicleCount}</span>
+            <span>车道 {laneCount}条</span>
             <span>车流 {trafficFlow?.flow_per_min ?? "-"} 辆/min</span>
-            <span>进出 {trafficFlow?.entry_count ?? "-"}/{trafficFlow?.exit_count ?? "-"}</span>
           </>
         )}
         <button onClick={() => onToggleExpand(view.camera.camera_id)}>详情</button>
