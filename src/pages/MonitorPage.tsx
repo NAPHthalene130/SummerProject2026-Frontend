@@ -161,6 +161,9 @@ export function MonitorPage() {
   ] as const;
 
   const totalVehicles = demoDataEnabled ? 0 : Object.values(streamState.boxes).reduce((s, b) => s + b.length, 0);
+  const allTraffic = demoDataEnabled ? [] : Object.values(streamState.traffic);
+  const totalEntry = allTraffic.reduce((s, t) => s + (t.entry_count || 0), 0);
+  const totalExit = allTraffic.reduce((s, t) => s + (t.exit_count || 0), 0);
   const totalLanes = demoDataEnabled ? 0 : Object.values(streamState.lanes).reduce((s, v) => s + v, 0);
   const totalAvgSpeed = demoDataEnabled ? 0 : (() => {
     const speeds = Object.values(streamState.boxes).flat().map(b => b.class_name ? 40 : 0);
@@ -286,8 +289,8 @@ export function MonitorPage() {
               title="实时状态"
               metrics={[
                 { label: "识别车辆", value: String(totalVehicles), unit: "辆", tone: "#72d4ff" },
-                { label: "平均车速", value: String(totalAvgSpeed), unit: "km/h", tone: "#6ee7a8" },
-                { label: "总车道", value: String(totalLanes), unit: "条", tone: "#24c1e0" },
+                { label: "总驶入", value: String(totalEntry), unit: "辆", tone: "#4CAF50" },
+                { label: "总驶出", value: String(totalExit), unit: "辆", tone: "#FF9800" },
               ]}
               distribution={[]}
             />
@@ -380,9 +383,9 @@ function MonitorTile({
           </>
         ) : (
           <>
-            <span>车道 {laneCount}条</span>
-            <span>车流 {trafficFlow?.flow_per_min ?? "-"} 辆/min</span>
-            <span>纬度 {view.camera.lat.toFixed(4)}</span>
+            <span>驶入 {trafficFlow?.entry_count ?? "-"}</span>
+            <span>驶出 {trafficFlow?.exit_count ?? "-"}</span>
+            <span>车流 {trafficFlow?.flow_per_min ?? "-"}/min</span>
             <span>状态 {statusText}</span>
           </>
         )}
@@ -481,9 +484,9 @@ function WebRTCTile({
           </>
         ) : (
           <>
-            <span>识别车辆 {vehicleCount}</span>
-            <span>车道 {laneCount}条</span>
-            <span>车流 {trafficFlow?.flow_per_min ?? "-"} 辆/min</span>
+            <span>驶入 {trafficFlow?.entry_count ?? "-"}</span>
+            <span>驶出 {trafficFlow?.exit_count ?? "-"}</span>
+            <span>车流 {trafficFlow?.flow_per_min ?? "-"}/min</span>
           </>
         )}
         <button onClick={() => onToggleExpand(view.camera.camera_id)}>详情</button>
