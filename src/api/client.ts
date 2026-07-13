@@ -39,6 +39,62 @@ export interface RisksResponse {
   detailed: Record<string, RiskDetail>;
 }
 
+export interface RoadRiskPredictionInput {
+  segment_id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  road_type: string;
+  lane_count: number;
+  speed_limit: number;
+  camera_ids: string[];
+  traffic_flow: number;
+  avg_speed: number;
+}
+
+export interface RoadRiskPrediction {
+  segment_id: string;
+  risk_score: number;
+  risk_level: "normal" | "busy" | "risk" | "danger";
+  reason: string[];
+  vehicle: {
+    camera_ids: string[];
+    vehicle_count: number;
+    avg_speed_kmh: number | null;
+    active_incidents: number;
+    source: string;
+  };
+  road: {
+    name: string;
+    display_name: string;
+    road_type: string;
+    district: string;
+    maxspeed: string | number | null;
+    lanes: string | number | null;
+    surface: string | null;
+    source: string;
+    fallback: boolean;
+  };
+}
+
+export interface RoadRiskPredictionResponse {
+  generated_at: string;
+  model: string;
+  forecast_minutes: number;
+  weather: {
+    temperature_2m: number;
+    relative_humidity_2m: number;
+    precipitation: number;
+    rain: number;
+    snowfall: number;
+    wind_speed_10m: number;
+    weather_code: number;
+    source: string;
+    fallback: boolean;
+  };
+  predictions: RoadRiskPrediction[];
+}
+
 export interface UserItem {
   user_id: number;
   user_name: string;
@@ -64,6 +120,11 @@ export interface MobileReport {
   review_message?: string; reviewed_at?: string;
 }
 
+export interface AgentChatResponse {
+  reply: string;
+  thread_id: string;
+}
+
 class ApiError extends Error {
   constructor(
     public status: number,
@@ -74,10 +135,10 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+async function request<T>(url: string, init?: RequestInit, timeoutMs = 12_000): Promise<T> {
   const timeoutController = init?.signal ? null : new AbortController();
   const timeoutId = timeoutController
-    ? window.setTimeout(() => timeoutController.abort(), 12_000)
+    ? window.setTimeout(() => timeoutController.abort(), timeoutMs)
     : null;
   let response: Response;
   try {
@@ -120,6 +181,17 @@ export function fetchRisks(): Promise<RisksResponse> {
   return request<RisksResponse>("/api/v1/risks/");
 }
 
+export function fetchRoadRiskPredictions(
+  segments: RoadRiskPredictionInput[],
+  selectedSegmentId?: string | null,
+): Promise<RoadRiskPredictionResponse> {
+  return request<RoadRiskPredictionResponse>("/api/v1/risks/prediction", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ segments, selected_segment_id: selectedSegmentId ?? null }),
+  }, 30_000);
+}
+
 export function postLiveOffer(cameraId: string, body: LiveOfferRequest): Promise<LiveOfferResponse> {
   return request<LiveOfferResponse>(`/api/v1/live/${cameraId}/offer`, {
     method: "POST",
@@ -134,6 +206,14 @@ export function fetchWorkOrders(): Promise<WorkOrderItem[]> {
 
 export function fetchStaff(): Promise<StaffMember[]> {
   return request<StaffMember[]>("/api/v1/staff/");
+}
+
+export function chatWithAgent(message: string, threadId?: string): Promise<AgentChatResponse> {
+  return request<AgentChatResponse>("/api/v1/agent/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, thread_id: threadId ?? null }),
+  }, 60_000);
 }
 
 export function fetchMobileReports(): Promise<MobileReport[]> {

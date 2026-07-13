@@ -2,64 +2,56 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// 30个摄像头/路口点位
-const points = [
-  { id: '01', name: '苏州街-海淀南路', lng: 116.3070, lat: 39.9730 },
-  { id: '25', name: '海淀南路中段', lng: 116.3120, lat: 39.9730 },
-  { id: '02', name: '海淀黄庄路口', lng: 116.3175, lat: 39.9730 },
-  { id: '26', name: '知春路中段', lng: 116.3240, lat: 39.9730 },
-  { id: '03', name: '知春里路口', lng: 116.3310, lat: 39.9730 },
-  { id: '04', name: '西土城路口', lng: 116.3480, lat: 39.9730 },
-  { id: '05', name: '苏州街-丹棱街', lng: 116.3070, lat: 39.9790 },
-  { id: '06', name: '中关村大街-丹棱街', lng: 116.3175, lat: 39.9790 },
-  { id: '27', name: '中关村大街中段', lng: 116.3175, lat: 39.9815 },
-  { id: '07', name: '科学院南路路口', lng: 116.3310, lat: 39.9790 },
-  { id: '08', name: '蓟门桥北', lng: 116.3480, lat: 39.9790 },
-  { id: '09', name: '海淀桥', lng: 116.3070, lat: 39.9840 },
-  { id: '10', name: '中关村一桥', lng: 116.3175, lat: 39.9840 },
-  { id: '11', name: '保福寺桥', lng: 116.3310, lat: 39.9840 },
-  { id: '12', name: '学院桥', lng: 116.3480, lat: 39.9840 },
-  { id: '13', name: '北大西门南', lng: 116.3070, lat: 39.9880 },
-  { id: '14', name: '北大东门南', lng: 116.3175, lat: 39.9880 },
-  { id: '28', name: '中关村东路中段', lng: 116.3310, lat: 39.9885 },
-  { id: '15', name: '清华科技园', lng: 116.3310, lat: 39.9880 },
-  { id: '16', name: '北语东门', lng: 116.3480, lat: 39.9880 },
-  { id: '17', name: '圆明园南门西', lng: 116.3070, lat: 39.9930 },
-  { id: '18', name: '北京大学东门', lng: 116.3175, lat: 39.9930 },
-  { id: '29', name: '成府路中段', lng: 116.3240, lat: 39.9930 },
-  { id: '19', name: '五道口路口', lng: 116.3310, lat: 39.9930 },
-  { id: '30', name: '清华东路西口', lng: 116.3395, lat: 39.9930 },
-  { id: '20', name: '六道口', lng: 116.3480, lat: 39.9930 },
-  { id: '21', name: '清华西门西', lng: 116.3070, lat: 40.0010 },
-  { id: '22', name: '清华大学西门', lng: 116.3175, lat: 40.0010 },
-  { id: '23', name: '清华大学东门', lng: 116.3310, lat: 40.0010 },
-  { id: '24', name: '矿大东门', lng: 116.3480, lat: 40.0010 }
-];
+// ==========================================
+// 1. 生成 5 x 6 完美大型矩阵网格点阵 (共30个监控摄像头)
+// ==========================================
+const lngs = [116.2970, 116.3070, 116.3175, 116.3310, 116.3480, 116.3580]; // 西到东的 6 条干道
+const lats = [40.0010, 39.9930, 39.9840, 39.9730, 39.9660];                // 北到南的 5 条干道
+const colNames = ['万泉河路', '苏州街', '中关村大街', '中关村东路', '学院路', '花园东路'];
+const rowNames = ['清华路', '成府路', '北四环西路', '知春路', '北三环西路'];
 
-const segmentConnections = [
-  { start: '01', end: '25', name: '海淀南路' }, { start: '25', end: '02', name: '海淀南路' },
-  { start: '02', end: '26', name: '知春路' }, { start: '26', end: '03', name: '知春路' },
-  { start: '03', end: '04', name: '知春路' }, { start: '05', end: '06', name: '丹棱街' },
-  { start: '06', end: '07', name: '科学院南路' }, { start: '07', end: '08', name: '知春路辅路' },
-  { start: '09', end: '10', name: '北四环西路' }, { start: '10', end: '11', name: '北四环西路' },
-  { start: '11', end: '12', name: '北四环西路' }, { start: '17', end: '18', name: '成府路' },
-  { start: '18', end: '29', name: '成府路' }, { start: '29', end: '19', name: '成府路' },
-  { start: '19', end: '30', name: '清华东路' }, { start: '30', end: '20', name: '清华东路' },
-  { start: '21', end: '22', name: '清华西路' }, { start: '22', end: '23', name: '双清路' },
-  { start: '23', end: '24', name: '清华东路' }, { start: '01', end: '05', name: '苏州街' },
-  { start: '05', end: '09', name: '苏州街' }, { start: '09', end: '13', name: '万泉河路' },
-  { start: '13', end: '17', name: '万泉河路' }, { start: '17', end: '21', name: '万泉河路' },
-  { start: '02', end: '06', name: '中关村大街' }, { start: '06', end: '27', name: '中关村大街' },
-  { start: '27', end: '10', name: '中关村大街' }, { start: '10', end: '14', name: '中关村北大街' },
-  { start: '14', end: '18', name: '中关村北大街' }, { start: '18', end: '22', name: '中关村北大街' },
-  { start: '03', end: '07', name: '中关村东路' }, { start: '07', end: '11', name: '中关村东路' },
-  { start: '11', end: '28', name: '中关村东路' }, { start: '28', end: '15', name: '中关村东路' },
-  { start: '15', end: '19', name: '中关村东路' }, { start: '19', end: '23', name: '中关村东路' },
-  { start: '04', end: '08', name: '学院路' }, { start: '08', end: '12', name: '学院路' },
-  { start: '12', end: '16', name: '学院路' }, { start: '16', end: '20', name: '学院路' },
-  { start: '20', end: '24', name: '学院路' }
-];
+const points = [];
+for (let r = 0; r < 5; r++) {
+  for (let c = 0; c < 6; c++) {
+    points.push({
+      id: `${r}${c}`, // 生成如 "00", "01", "45" 的ID
+      name: `${colNames[c]}与${rowNames[r]}`,
+      lng: lngs[c],
+      lat: lats[r]
+    });
+  }
+}
 
+// ==========================================
+// 2. 自动生成网格拓扑连线 (严格相邻，绝对不重合)
+// ==========================================
+const segmentConnections = [];
+
+// 横向连接 (East-West)
+for (let r = 0; r < 5; r++) {
+  for (let c = 0; c < 5; c++) {
+    segmentConnections.push({
+      start: `${r}${c}`,
+      end: `${r}${c + 1}`,
+      name: rowNames[r]
+    });
+  }
+}
+
+// 纵向连接 (North-South)
+for (let c = 0; c < 6; c++) {
+  for (let r = 0; r < 4; r++) {
+    segmentConnections.push({
+      start: `${r}${c}`,
+      end: `${r + 1}${c}`,
+      name: colNames[c]
+    });
+  }
+}
+
+// ==========================================
+// 3. 数据拉取与文件生成
+// ==========================================
 async function fetchRoutePath(startLng, startLat, endLng, endLat) {
   const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?geometries=geojson`;
   try {
@@ -70,7 +62,6 @@ async function fetchRoutePath(startLng, startLat, endLng, endLat) {
   return [[startLng, startLat], [endLng, endLat]];
 }
 
-// 映射状态枚举
 function getRiskStatus(score) {
   if (score < 30) return "normal";
   if (score < 60) return "busy";
@@ -79,9 +70,27 @@ function getRiskStatus(score) {
 }
 
 async function generateData() {
-  console.log('🚀 开始生成完全兼容的前端路网数据...');
-  const nodes = points.map(p => ({ node_id: `N${p.id}`, name: p.name, lng: p.lng, lat: p.lat }));
-  const cameras = points.map(p => ({ camera_id: `C${p.id}`, name: `${p.name}监控`, lng: p.lng, lat: p.lat, status: 'online' }));
+  console.log('🚀 开始生成海淀区大型矩阵路网数据...');
+  
+  const nodes = points.map(p => ({
+    node_id: `N${p.id}`,
+    name: p.name,
+    lng: p.lng,
+    lat: p.lat,
+    x: 0,
+    y: 0,
+    type: 'normal',
+  }));
+  const cameras = points.map(p => ({
+    camera_id: `C${p.id}`,
+    name: p.name,
+    segment_id: '',
+    lng: p.lng,
+    lat: p.lat,
+    x: 0,
+    y: 0,
+    status: 'online',
+  }));
   const roadSegments = [];
 
   for (let i = 0; i < segmentConnections.length; i++) {
@@ -90,10 +99,11 @@ async function generateData() {
     const endP = points.find(c => c.id === config.end);
     if (!startP || !endP) continue;
 
-    await new Promise(resolve => setTimeout(resolve, 800)); 
+    // 延迟 600ms 防止被 OSRM 限制
+    await new Promise(resolve => setTimeout(resolve, 600)); 
     const pathCoords = await fetchRoutePath(startP.lng, startP.lat, endP.lng, endP.lat);
 
-    // 强制对齐路径首尾坐标到节点/监控点坐标
+    // 强制对齐首尾，避免漂移
     if (pathCoords.length >= 2) {
       pathCoords[0] = [startP.lng, startP.lat];
       pathCoords[pathCoords.length - 1] = [endP.lng, endP.lat];
@@ -101,14 +111,13 @@ async function generateData() {
 
     const riskScore = Math.floor(Math.random() * 100);
 
-    // 严格对齐你代码中的 RoadSegment 接口字段
     roadSegments.push({
       segment_id: `S-${config.start}-${config.end}`,
       name: config.name,
       from_node: `N${config.start}`,
       to_node: `N${config.end}`,
       road_type: 'main',
-      length_m: Math.floor(Math.random() * 800) + 200,
+      length_m: Math.floor(Math.random() * 1200) + 400,
       lane_count: 4,
       speed_limit: 60,
       traffic_flow: Math.floor(Math.random() * 1200) + 10,
@@ -118,11 +127,10 @@ async function generateData() {
       camera_ids: [`C${config.start}`, `C${config.end}`],
       path: pathCoords 
     });
-    console.log(`[${i + 1}/${segmentConnections.length}] 已生成: ${config.name}`);
+    console.log(`[${i + 1}/${segmentConnections.length}] 已生成: ${config.name} (${startP.name} ➡️ ${endP.name})`);
   }
 
-  // 生成到一个全新的独立文件，不破坏原有类型！
-  const outputContent = `
+  const outputContent = `// 此文件由 scripts/generateRoadPaths.js 自动生成，请勿手动修改
 import type { RoadNode, CameraPoint, RoadSegment } from './standardRoadNetwork';
 
 export const haidianNodes: RoadNode[] = ${JSON.stringify(nodes, null, 2)};
@@ -132,7 +140,7 @@ export const haidianSegments: RoadSegment[] = ${JSON.stringify(roadSegments, nul
 
   const outputPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/data/haidianRoadNetwork.ts');
   fs.writeFileSync(outputPath, outputContent, 'utf-8');
-  console.log(`✅ 数据已安全保存至: src/data/haidianRoadNetwork.ts`);
+  console.log(`\n✅ 数据已安全保存至: src/data/haidianRoadNetwork.ts`);
 }
 
 generateData();

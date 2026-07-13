@@ -56,5 +56,6 @@ export function useScenarioPlayback() {
     },
     next: () => setStepIndex((previous) => Math.min(previous + 1, scenarioTimeline.length - 1)),
     previous: () => setStepIndex((previous) => Math.max(previous - 1, 0)),
+    jump: (index: number) => setStepIndex(Math.max(0, Math.min(index, scenarioTimeline.length - 1))),
   };
 }

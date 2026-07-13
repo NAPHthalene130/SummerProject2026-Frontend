@@ -748,6 +748,7 @@ function DemoMonitorModal({ view, onClose }: { view: CameraView; onClose: () => 
   );
 }
 
+
 function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: CameraView; vehicleCount: number; onClose: () => void }) {
   const mjpegUrl = `/api/v1/live/${cameraView.camera.camera_id}/mjpeg`;
   const [imgError, setImgError] = useState(false);
