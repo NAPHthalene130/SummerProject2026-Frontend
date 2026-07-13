@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       proxy: {
-        "/api": { target: apiTarget, changeOrigin: true },
+        "/api": { target: apiTarget, changeOrigin: true, timeout: 0 },
         "/orderImg": { target: apiTarget, changeOrigin: true },
         "/cam-": { target: "http://localhost:8888", changeOrigin: true },
       },

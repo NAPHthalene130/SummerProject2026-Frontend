@@ -400,13 +400,16 @@ function WebRTCTile({
     const canvas = canvasRef.current;
     const img = imgRef.current;
     if (!canvas || !img || !img.complete) return;
+    const vw = img.naturalWidth || img.clientWidth;
+    const vh = img.naturalHeight || img.clientHeight;
+    if (!vw || !vh) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     canvas.width = img.clientWidth;
     canvas.height = img.clientHeight;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const sx = canvas.width / 640;
-    const sy = canvas.height / 480;
+    const sx = canvas.width / vw;
+    const sy = canvas.height / vh;
     const COLORS = ["#ff4444","#44ff44","#4488ff","#ffaa00","#ff44ff","#44ffff"];
     boxes.forEach((b, i) => {
       const [x1, y1, x2, y2] = b.bbox;
@@ -755,13 +758,16 @@ function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: C
     const canvas = canvasRef.current;
     const img = imgRef.current;
     if (!canvas || !img || !img.complete) return;
+    const vw = img.naturalWidth || img.clientWidth;
+    const vh = img.naturalHeight || img.clientHeight;
+    if (!vw || !vh) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     canvas.width = img.clientWidth;
     canvas.height = img.clientHeight;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const sx = canvas.width / 640;
-    const sy = canvas.height / 480;
+    const sx = canvas.width / vw;
+    const sy = canvas.height / vh;
     const COLORS = ["#ff4444","#44ff44","#4488ff","#ffaa00","#ff44ff","#44ffff"];
     boxes.forEach((b, i) => {
       const [x1, y1, x2, y2] = b.bbox;
