@@ -72,8 +72,25 @@ function getRiskStatus(score) {
 async function generateData() {
   console.log('🚀 开始生成海淀区大型矩阵路网数据...');
   
-  const nodes = points.map(p => ({ node_id: `N${p.id}`, name: p.name, lng: p.lng, lat: p.lat }));
-  const cameras = points.map(p => ({ camera_id: `C${p.id}`, name: p.name, lng: p.lng, lat: p.lat, status: 'online' }));
+  const nodes = points.map(p => ({
+    node_id: `N${p.id}`,
+    name: p.name,
+    lng: p.lng,
+    lat: p.lat,
+    x: 0,
+    y: 0,
+    type: 'normal',
+  }));
+  const cameras = points.map(p => ({
+    camera_id: `C${p.id}`,
+    name: p.name,
+    segment_id: '',
+    lng: p.lng,
+    lat: p.lat,
+    x: 0,
+    y: 0,
+    status: 'online',
+  }));
   const roadSegments = [];
 
   for (let i = 0; i < segmentConnections.length; i++) {
