@@ -720,9 +720,7 @@ function useWebRTC(cameraId: string) {
       pc.addTransceiver("video", { direction: "recvonly" });
 
       pc.ontrack = (event) => {
-        if (event.streams[0]) {
-          setStream(event.streams[0]);
-        }
+        setStream(event.streams[0] ?? new MediaStream([event.track]));
       };
 
       pc.oniceconnectionstatechange = () => {

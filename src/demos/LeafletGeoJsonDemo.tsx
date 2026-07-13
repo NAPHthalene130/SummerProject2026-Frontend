@@ -27,9 +27,9 @@ export function LeafletGeoJsonDemo({
     if (!containerRef.current || mapRef.current) return;
 
     const map = L.map(containerRef.current, { center: [39.906, 116.396], zoom: 15 });
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    L.tileLayer("https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png", {
       maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+      attribution: '&copy; OpenStreetMap contributors, Tiles style by HOT',
     }).addTo(map);
 
     const legend = new L.Control({ position: "bottomright" });

@@ -39,6 +39,62 @@ export interface RisksResponse {
   detailed: Record<string, RiskDetail>;
 }
 
+export interface RoadRiskPredictionInput {
+  segment_id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  road_type: string;
+  lane_count: number;
+  speed_limit: number;
+  camera_ids: string[];
+  traffic_flow: number;
+  avg_speed: number;
+}
+
+export interface RoadRiskPrediction {
+  segment_id: string;
+  risk_score: number;
+  risk_level: "normal" | "busy" | "risk" | "danger";
+  reason: string[];
+  vehicle: {
+    camera_ids: string[];
+    vehicle_count: number;
+    avg_speed_kmh: number | null;
+    active_incidents: number;
+    source: string;
+  };
+  road: {
+    name: string;
+    display_name: string;
+    road_type: string;
+    district: string;
+    maxspeed: string | number | null;
+    lanes: string | number | null;
+    surface: string | null;
+    source: string;
+    fallback: boolean;
+  };
+}
+
+export interface RoadRiskPredictionResponse {
+  generated_at: string;
+  model: string;
+  forecast_minutes: number;
+  weather: {
+    temperature_2m: number;
+    relative_humidity_2m: number;
+    precipitation: number;
+    rain: number;
+    snowfall: number;
+    wind_speed_10m: number;
+    weather_code: number;
+    source: string;
+    fallback: boolean;
+  };
+  predictions: RoadRiskPrediction[];
+}
+
 export interface UserItem {
   user_id: number;
   user_name: string;
@@ -123,6 +179,17 @@ export function fetchCameraStats(): Promise<CameraStatsResponse> {
 
 export function fetchRisks(): Promise<RisksResponse> {
   return request<RisksResponse>("/api/v1/risks/");
+}
+
+export function fetchRoadRiskPredictions(
+  segments: RoadRiskPredictionInput[],
+  selectedSegmentId?: string | null,
+): Promise<RoadRiskPredictionResponse> {
+  return request<RoadRiskPredictionResponse>("/api/v1/risks/prediction", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ segments, selected_segment_id: selectedSegmentId ?? null }),
+  }, 30_000);
 }
 
 export function postLiveOffer(cameraId: string, body: LiveOfferRequest): Promise<LiveOfferResponse> {
