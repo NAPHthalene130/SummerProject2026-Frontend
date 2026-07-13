@@ -18,6 +18,94 @@ interface CameraView {
 }
 
 const PAGE_SIZE = 6;
+// EventSource keeps one HTTP/1.1 connection open.  Negotiating all six peers at
+// once can exhaust the browser's remaining per-origin connection slots and
+// consistently leave the last tile queued until its offer times out.
+const MAX_CONCURRENT_WEBRTC_NEGOTIATIONS = 3;
+let activeWebRTCNegotiations = 0;
+const webRTCNegotiationQueue: Array<(release: () => void) => void> = [];
+const DETECTION_CLASS_COLORS: Record<string, string> = {
+  car: "#40c4ff",
+  汽车: "#40c4ff",
+  bus: "#7c4dff",
+  公交车: "#7c4dff",
+  truck: "#ff5252",
+  卡车: "#ff5252",
+  motorcycle: "#ffab40",
+  摩托车: "#ffab40",
+  person: "#69f0ae",
+  行人: "#69f0ae",
+  "traffic light": "#ffd740",
+  交通灯: "#ffd740",
+  红绿灯: "#ffd740",
+};
+const DETECTION_FALLBACK_COLORS = [
+  "#64ffda",
+  "#e040fb",
+  "#ff6e40",
+  "#b2ff59",
+  "#536dfe",
+  "#ff4081",
+];
+const TRAJECTORY_CLASSES = new Set([
+  "car",
+  "汽车",
+  "bus",
+  "公交车",
+  "truck",
+  "卡车",
+  "motorcycle",
+  "摩托车",
+  "bicycle",
+  "自行车",
+]);
+const MAX_TRAJECTORY_POINTS = 40;
+const TRAJECTORY_STALE_SECONDS = 3;
+
+interface VehicleTrajectory {
+  className: string;
+  lastSeenAt: number;
+  points: Array<{ x: number; y: number }>;
+}
+
+function getDetectionClassColor(className: string) {
+  const normalized = className.trim().toLowerCase();
+  const configured = DETECTION_CLASS_COLORS[normalized];
+  if (configured) return configured;
+  let hash = 0;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = ((hash << 5) - hash + normalized.charCodeAt(index)) | 0;
+  }
+  return DETECTION_FALLBACK_COLORS[Math.abs(hash) % DETECTION_FALLBACK_COLORS.length];
+}
+
+function isTrajectoryClass(className: string) {
+  return TRAJECTORY_CLASSES.has(className.trim().toLowerCase());
+}
+
+function createNegotiationRelease() {
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    activeWebRTCNegotiations = Math.max(0, activeWebRTCNegotiations - 1);
+    const next = webRTCNegotiationQueue.shift();
+    if (next) {
+      activeWebRTCNegotiations += 1;
+      next(createNegotiationRelease());
+    }
+  };
+}
+
+function acquireWebRTCNegotiationSlot(): Promise<() => void> {
+  if (activeWebRTCNegotiations < MAX_CONCURRENT_WEBRTC_NEGOTIATIONS) {
+    activeWebRTCNegotiations += 1;
+    return Promise.resolve(createNegotiationRelease());
+  }
+  return new Promise((resolve) => {
+    webRTCNegotiationQueue.push(resolve);
+  });
+}
 
 function backendCameraToView(camera: BackendCamera, index: number): CameraView {
   const channelNum = String(index + 1).padStart(2, "0");
@@ -519,6 +607,8 @@ function DetectionOverlay({
   fit: "cover" | "contain";
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const trajectoriesRef = useRef<Map<number, VehicleTrajectory>>(new Map());
+  const lastTrajectoryFrameRef = useRef(0);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -556,10 +646,96 @@ function DetectionOverlay({
       : Math.min(displayWidth / sourceWidth, displayHeight / sourceHeight);
     const offsetX = (displayWidth - sourceWidth * scale) / 2;
     const offsetY = (displayHeight - sourceHeight * scale) / 2;
-    const colors = ["#ff5252", "#69f0ae", "#40c4ff", "#ffd740", "#e040fb", "#64ffda"];
     const drawnTracks = new Set<number>();
 
-    boxes.forEach((box, index) => {
+    const detectionTimestamp = frameMetadata?.updated_at ?? 0;
+    if (detectionTimestamp > lastTrajectoryFrameRef.current) {
+      lastTrajectoryFrameRef.current = detectionTimestamp;
+      boxes.forEach((box) => {
+        if (
+          box.track_id < 0
+          || box.bbox.length < 4
+          || !isTrajectoryClass(box.class_name)
+        ) return;
+        const [x1, y1, x2, y2] = box.bbox;
+        const center = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
+        if (!Number.isFinite(center.x) || !Number.isFinite(center.y)) return;
+
+        let trajectory = trajectoriesRef.current.get(box.track_id);
+        if (!trajectory || trajectory.className !== box.class_name) {
+          trajectory = {
+            className: box.class_name,
+            lastSeenAt: detectionTimestamp,
+            points: [],
+          };
+          trajectoriesRef.current.set(box.track_id, trajectory);
+        }
+        trajectory.lastSeenAt = detectionTimestamp;
+        const previous = trajectory.points[trajectory.points.length - 1];
+        if (
+          !previous
+          || Math.hypot(center.x - previous.x, center.y - previous.y) >= 1
+        ) {
+          trajectory.points.push(center);
+          if (trajectory.points.length > MAX_TRAJECTORY_POINTS) {
+            trajectory.points.splice(
+              0,
+              trajectory.points.length - MAX_TRAJECTORY_POINTS,
+            );
+          }
+        }
+      });
+
+      const staleBefore = detectionTimestamp - TRAJECTORY_STALE_SECONDS;
+      trajectoriesRef.current.forEach((trajectory, trackId) => {
+        if (trajectory.lastSeenAt < staleBefore) {
+          trajectoriesRef.current.delete(trackId);
+        }
+      });
+    }
+
+    context.save();
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    trajectoriesRef.current.forEach((trajectory) => {
+      if (trajectory.points.length < 2) return;
+      const color = getDetectionClassColor(trajectory.className);
+      for (let index = 1; index < trajectory.points.length; index += 1) {
+        const previous = trajectory.points[index - 1];
+        const current = trajectory.points[index];
+        context.beginPath();
+        context.moveTo(offsetX + previous.x * scale, offsetY + previous.y * scale);
+        context.lineTo(offsetX + current.x * scale, offsetY + current.y * scale);
+        context.strokeStyle = color;
+        context.lineWidth = Math.max(2, 3 * scale);
+        context.globalAlpha = 0.12 + 0.72 * index / (trajectory.points.length - 1);
+        context.stroke();
+      }
+
+      const end = trajectory.points[trajectory.points.length - 1];
+      const beforeEnd = trajectory.points[trajectory.points.length - 2];
+      const endX = offsetX + end.x * scale;
+      const endY = offsetY + end.y * scale;
+      const angle = Math.atan2(end.y - beforeEnd.y, end.x - beforeEnd.x);
+      const arrowSize = 5;
+      context.beginPath();
+      context.moveTo(endX, endY);
+      context.lineTo(
+        endX - arrowSize * Math.cos(angle - Math.PI / 6),
+        endY - arrowSize * Math.sin(angle - Math.PI / 6),
+      );
+      context.lineTo(
+        endX - arrowSize * Math.cos(angle + Math.PI / 6),
+        endY - arrowSize * Math.sin(angle + Math.PI / 6),
+      );
+      context.closePath();
+      context.fillStyle = color;
+      context.globalAlpha = 0.9;
+      context.fill();
+    });
+    context.restore();
+
+    boxes.forEach((box) => {
       if (drawnTracks.has(box.track_id) || box.bbox.length < 4) return;
       drawnTracks.add(box.track_id);
       const [x1, y1, x2, y2] = box.bbox;
@@ -569,7 +745,7 @@ function DetectionOverlay({
       const height = (y2 - y1) * scale;
       if (width <= 0 || height <= 0) return;
 
-      const color = colors[index % colors.length];
+      const color = getDetectionClassColor(box.class_name);
       context.strokeStyle = color;
       context.lineWidth = 2;
       context.strokeRect(left, top, width, height);
@@ -853,9 +1029,27 @@ function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 3000) {
 
 function useWebRTC(cameraId: string) {
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const mountedRef = useRef(false);
+  const retryAttemptsRef = useRef(0);
+  const retryTimerRef = useRef<number | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const scheduleRetry = useCallback(() => {
+    if (
+      !mountedRef.current
+      || retryTimerRef.current !== null
+      || retryAttemptsRef.current >= 2
+    ) return;
+    retryAttemptsRef.current += 1;
+    const delay = retryAttemptsRef.current * 1_000;
+    retryTimerRef.current = window.setTimeout(() => {
+      retryTimerRef.current = null;
+      if (mountedRef.current) setRetryToken((token) => token + 1);
+    }, delay);
+  }, []);
 
   const closeCurrentPeer = useCallback(() => {
     const pc = pcRef.current;
@@ -880,6 +1074,7 @@ function useWebRTC(cameraId: string) {
 
     pc.ontrack = (event) => {
       if (pcRef.current !== pc) return;
+      retryAttemptsRef.current = 0;
       setStream(event.streams[0] ?? new MediaStream([event.track]));
       setConnecting(false);
     };
@@ -893,6 +1088,7 @@ function useWebRTC(cameraId: string) {
       setError("WebRTC 连接已断开");
       setConnecting(false);
       setStream(null);
+      scheduleRetry();
     };
 
     try {
@@ -905,10 +1101,20 @@ function useWebRTC(cameraId: string) {
         return;
       }
 
-      const answer = await postLiveOffer(cameraId, {
-        sdp: pc.localDescription?.sdp ?? offer.sdp ?? "",
-        type: pc.localDescription?.type ?? offer.type ?? "offer",
-      });
+      const releaseNegotiation = await acquireWebRTCNegotiationSlot();
+      let answer: Awaited<ReturnType<typeof postLiveOffer>>;
+      try {
+        if (pcRef.current !== pc) {
+          pc.close();
+          return;
+        }
+        answer = await postLiveOffer(cameraId, {
+          sdp: pc.localDescription?.sdp ?? offer.sdp ?? "",
+          type: pc.localDescription?.type ?? offer.type ?? "offer",
+        });
+      } finally {
+        releaseNegotiation();
+      }
 
       if (pcRef.current !== pc) {
         pc.close();
@@ -925,15 +1131,24 @@ function useWebRTC(cameraId: string) {
         setError(err instanceof Error ? err.message : "WebRTC 连接失败");
         setConnecting(false);
         setStream(null);
+        scheduleRetry();
       }
       if (pc.connectionState !== "closed") pc.close();
     }
-  }, [cameraId, closeCurrentPeer]);
+  }, [cameraId, closeCurrentPeer, scheduleRetry]);
 
   useEffect(() => {
+    mountedRef.current = true;
     void connect();
-    return closeCurrentPeer;
-  }, [connect, closeCurrentPeer]);
+    return () => {
+      mountedRef.current = false;
+      if (retryTimerRef.current !== null) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      closeCurrentPeer();
+    };
+  }, [connect, closeCurrentPeer, retryToken]);
 
   const disconnect = useCallback(() => {
     closeCurrentPeer();

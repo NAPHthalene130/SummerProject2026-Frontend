@@ -197,7 +197,7 @@ export function postLiveOffer(cameraId: string, body: LiveOfferRequest): Promise
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  });
+  }, 30_000);
 }
 
 export function fetchWorkOrders(): Promise<WorkOrderItem[]> {
