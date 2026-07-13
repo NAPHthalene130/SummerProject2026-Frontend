@@ -397,10 +397,17 @@ function getDynamicRoadCondition(prediction: RoadRiskPrediction | null, segment:
   };
 }
 
+function normalizeCamId(id: string): string {
+  const m = id.match(/^cam[-_](\d+)$/i);
+  return m ? `C${String(Number(m[1])).padStart(2, "0")}` : id;
+}
+
 function segAvgRisk(seg: RoadSegment, cameraRisks: Record<string, number>): number {
   const ids = seg.camera_ids ?? [];
-  const vals = ids.map((id) => cameraRisks[id]).filter((v): v is number => v !== undefined);
-  return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0.5;
+  const vals = ids.map((id) => cameraRisks[normalizeCamId(id)]).filter((v): v is number => v !== undefined);
+  if (vals.length > 0) return vals.reduce((a, b) => a + b, 0) / vals.length;
+  const bySeg = cameraRisks[seg.segment_id];
+  return bySeg ?? 0.5;
 }
 
 function RoadMapView({
