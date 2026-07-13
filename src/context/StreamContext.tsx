@@ -1,9 +1,16 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
-interface BoxData {
+export interface BoxData {
   track_id: number;
   class_name: string;
+  confidence?: number;
   bbox: number[];
+}
+
+export interface FrameMetadata {
+  width: number;
+  height: number;
+  updated_at: number;
 }
 
 interface TrafficFlow {
@@ -16,12 +23,14 @@ interface StreamState {
   boxes: Record<string, BoxData[]>;
   traffic: Record<string, TrafficFlow>;
   lanes: Record<string, number>;
+  frames: Record<string, FrameMetadata>;
 }
 
-const StreamContext = createContext<StreamState>({ boxes: {}, traffic: {}, lanes: {} });
+const emptyState: StreamState = { boxes: {}, traffic: {}, lanes: {}, frames: {} };
+const StreamContext = createContext<StreamState>(emptyState);
 
 export function StreamProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<StreamState>({ boxes: {}, traffic: {}, lanes: {} });
+  const [state, setState] = useState<StreamState>(emptyState);
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -32,8 +41,13 @@ export function StreamProvider({ children }: { children: React.ReactNode }) {
     es.onmessage = (e) => {
       try {
         const all = JSON.parse(e.data);
-        const { _traffic, _lanes, _derived, ...boxes } = all;
-        setState({ boxes, traffic: _traffic || {}, lanes: _lanes || {} });
+        const { _traffic, _lanes, _derived, _frames, ...boxes } = all;
+        setState({
+          boxes,
+          traffic: _traffic || {},
+          lanes: _lanes || {},
+          frames: _frames || {},
+        });
       } catch {}
     };
     es.onerror = () => {

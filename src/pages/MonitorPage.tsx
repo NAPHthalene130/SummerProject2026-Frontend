@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CameraPoint, RoadSegment } from "../data/standardRoadNetwork";
 import { useDataMode } from "../context/DataModeContext";
 import { StreamProvider, useStreamState } from "../context/StreamContext";
+import type { BoxData, FrameMetadata } from "../context/StreamContext";
 import { useScenarioPlayback } from "../hooks/useScenarioPlayback";
 import type { TrafficEvent } from "../types/business";
 import { getRiskColor, getRiskText, getTrafficFlowColor } from "../utils/riskStyle";
@@ -276,19 +277,11 @@ function MonitorPageContent() {
             />
 
             <div className="monitor-wall-grid">
-              {pageItems.map((view) => page === 0 ? (
+              {pageItems.map((view) => (
                 <WebRTCTile
                   key={view.camera.camera_id}
                   view={view}
                   vehicleCount={vehicleCountMap[view.camera.camera_id] ?? 0}
-                  expandedId={expandedId}
-                  onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
-                  onSelect={setActiveCamera}
-                />
-              ) : (
-                <MonitorTile
-                  key={view.camera.camera_id}
-                  view={view}
                   expandedId={expandedId}
                   onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
                   onSelect={setActiveCamera}
@@ -425,6 +418,8 @@ function WebRTCTile({
   const { stream, connecting, error } = useWebRTC(view.camera.camera_id);
   const streamState = useStreamState();
   const trafficFlow = streamState.traffic[view.camera.camera_id] || null;
+  const boxes = streamState.boxes[view.camera.camera_id] || [];
+  const frameMetadata = streamState.frames[view.camera.camera_id] || null;
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -460,6 +455,14 @@ function WebRTCTile({
         ) : (
           <div className="webrtc-placeholder"><span>等待视频流…</span></div>
         )}
+        {stream ? (
+          <DetectionOverlay
+            videoRef={videoRef}
+            boxes={boxes}
+            frameMetadata={frameMetadata}
+            fit="cover"
+          />
+        ) : null}
         <div className="video-caption">
           <b>{view.camera.name}</b>
           {hasSegment ? <span>{view.segment!.name}</span> : null}
@@ -502,6 +505,107 @@ function WebRTCTile({
       ) : null}
     </article>
   );
+}
+
+function DetectionOverlay({
+  videoRef,
+  boxes,
+  frameMetadata,
+  fit,
+}: {
+  videoRef: { current: HTMLVideoElement | null };
+  boxes: BoxData[];
+  frameMetadata: FrameMetadata | null;
+  fit: "cover" | "contain";
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    const container = canvas?.parentElement;
+    if (!canvas || !video || !container) return;
+
+    const rect = container.getBoundingClientRect();
+    const displayWidth = rect.width;
+    const displayHeight = rect.height;
+    if (!displayWidth || !displayHeight) return;
+
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    const bitmapWidth = Math.max(1, Math.round(displayWidth * pixelRatio));
+    const bitmapHeight = Math.max(1, Math.round(displayHeight * pixelRatio));
+    if (canvas.width !== bitmapWidth || canvas.height !== bitmapHeight) {
+      canvas.width = bitmapWidth;
+      canvas.height = bitmapHeight;
+    }
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.clearRect(0, 0, displayWidth, displayHeight);
+
+    const sourceWidth = frameMetadata?.width || video.videoWidth;
+    const sourceHeight = frameMetadata?.height || video.videoHeight;
+    const metadataIsStale = frameMetadata
+      ? Date.now() / 1000 - frameMetadata.updated_at > 3
+      : false;
+    if (!sourceWidth || !sourceHeight || metadataIsStale) return;
+
+    const scale = fit === "cover"
+      ? Math.max(displayWidth / sourceWidth, displayHeight / sourceHeight)
+      : Math.min(displayWidth / sourceWidth, displayHeight / sourceHeight);
+    const offsetX = (displayWidth - sourceWidth * scale) / 2;
+    const offsetY = (displayHeight - sourceHeight * scale) / 2;
+    const colors = ["#ff5252", "#69f0ae", "#40c4ff", "#ffd740", "#e040fb", "#64ffda"];
+    const drawnTracks = new Set<number>();
+
+    boxes.forEach((box, index) => {
+      if (drawnTracks.has(box.track_id) || box.bbox.length < 4) return;
+      drawnTracks.add(box.track_id);
+      const [x1, y1, x2, y2] = box.bbox;
+      const left = offsetX + x1 * scale;
+      const top = offsetY + y1 * scale;
+      const width = (x2 - x1) * scale;
+      const height = (y2 - y1) * scale;
+      if (width <= 0 || height <= 0) return;
+
+      const color = colors[index % colors.length];
+      context.strokeStyle = color;
+      context.lineWidth = 2;
+      context.strokeRect(left, top, width, height);
+
+      const confidence = box.confidence == null
+        ? ""
+        : ` ${Math.round(box.confidence * 100)}%`;
+      const label = `${box.class_name}${confidence}`;
+      context.font = "600 11px ui-monospace, SFMono-Regular, Consolas, monospace";
+      const labelWidth = context.measureText(label).width + 8;
+      const labelTop = Math.max(0, top - 18);
+      context.fillStyle = "rgba(5, 14, 24, 0.82)";
+      context.fillRect(left, labelTop, labelWidth, 17);
+      context.fillStyle = color;
+      context.fillText(label, left + 4, labelTop + 12);
+    });
+  }, [boxes, fit, frameMetadata, videoRef]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const container = canvas?.parentElement;
+    if (!video || !container) return;
+    draw();
+    video.addEventListener("loadedmetadata", draw);
+    video.addEventListener("resize", draw);
+    const observer = new ResizeObserver(draw);
+    observer.observe(container);
+    return () => {
+      video.removeEventListener("loadedmetadata", draw);
+      video.removeEventListener("resize", draw);
+      observer.disconnect();
+    };
+  }, [draw, videoRef]);
+
+  return <canvas ref={canvasRef} className="monitor-detection-overlay" aria-hidden="true" />;
 }
 
 function getCameraBorderColor(view: CameraView) {
@@ -844,6 +948,9 @@ function useWebRTC(cameraId: string) {
 
 function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: CameraView; vehicleCount: number; onClose: () => void }) {
   const { stream, connecting, error, disconnect } = useWebRTC(cameraView.camera.camera_id);
+  const streamState = useStreamState();
+  const boxes = streamState.boxes[cameraView.camera.camera_id] || [];
+  const frameMetadata = streamState.frames[cameraView.camera.camera_id] || null;
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -868,13 +975,21 @@ function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: C
           ) : connecting ? (
             <span style={{ color: "#72d4ff" }}>正在建立 WebRTC 连接…</span>
           ) : stream ? (
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              style={{ width: "100%", height: "auto", maxHeight: 360, display: "block", marginTop: 8 }}
-            />
+            <div className="modal-live-video-wrap">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="modal-live-video"
+              />
+              <DetectionOverlay
+                videoRef={videoRef}
+                boxes={boxes}
+                frameMetadata={frameMetadata}
+                fit="contain"
+              />
+            </div>
           ) : (
             <span style={{ color: "#aaa" }}>等待视频流…</span>
           )}

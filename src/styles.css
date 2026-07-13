@@ -4156,6 +4156,25 @@ button:hover {
   z-index: 0;
 }
 
+.monitor-detection-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.video-scanline,
+.signal-corner,
+.live-badge,
+.channel-badge,
+.status-ribbon,
+.video-caption,
+.monitor-video > em {
+  z-index: 2;
+}
+
 .webrtc-placeholder {
   position: absolute;
   inset: 22% 16%;
@@ -4268,6 +4287,22 @@ button:hover {
 
 .modal-video-stage span {
   color: #72d4ff;
+}
+
+.modal-live-video-wrap {
+  position: relative;
+  width: min(960px, 100%);
+  line-height: 0;
+  overflow: hidden;
+  background: #050b12;
+}
+
+.modal-live-video {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 360px;
+  object-fit: contain;
 }
 
 .modal-video-info {
