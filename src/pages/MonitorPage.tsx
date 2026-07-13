@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CameraPoint, RoadSegment } from "../data/standardRoadNetwork";
 import { useDataMode } from "../context/DataModeContext";
+import { useStreamState } from "../context/StreamContext";
 import { useScenarioPlayback } from "../hooks/useScenarioPlayback";
 import type { TrafficEvent } from "../types/business";
 import { getRiskColor, getRiskText, getTrafficFlowColor } from "../utils/riskStyle";
@@ -380,26 +381,11 @@ function WebRTCTile({
 }) {
   const mjpegUrl = `/api/v1/live/${view.camera.camera_id}/mjpeg`;
   const [imgError, setImgError] = useState(false);
-  const [boxes, setBoxes] = useState<{track_id: number; class_name: string; bbox: number[]}[]>([]);
-  const [trafficFlow, setTrafficFlow] = useState<{entry_count: number; exit_count: number; flow_per_min: number} | null>(null);
+  const streamState = useStreamState();
+  const boxes = streamState.boxes[view.camera.camera_id] || [];
+  const trafficFlow = streamState.traffic[view.camera.camera_id] || null;
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const es = new EventSource("/api/v1/cameras/boxes/stream");
-    es.onmessage = (e) => {
-      try {
-        const all = JSON.parse(e.data);
-        const camBoxes = all[view.camera.camera_id];
-        if (camBoxes) setBoxes(camBoxes);
-        const traffic = all["_traffic"];
-        if (traffic && traffic[view.camera.camera_id]) {
-          setTrafficFlow(traffic[view.camera.camera_id]);
-        }
-      } catch {}
-    };
-    return () => es.close();
-  }, [view.camera.camera_id]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -743,21 +729,10 @@ function DemoMonitorModal({ view, onClose }: { view: CameraView; onClose: () => 
 function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: CameraView; vehicleCount: number; onClose: () => void }) {
   const mjpegUrl = `/api/v1/live/${cameraView.camera.camera_id}/mjpeg`;
   const [imgError, setImgError] = useState(false);
-  const [boxes, setBoxes] = useState<{track_id: number; class_name: string; bbox: number[]}[]>([]);
+  const streamState = useStreamState();
+  const boxes = streamState.boxes[cameraView.camera.camera_id] || [];
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const es = new EventSource("/api/v1/cameras/boxes/stream");
-    es.onmessage = (e) => {
-      try {
-        const all = JSON.parse(e.data);
-        const camBoxes = all[cameraView.camera.camera_id];
-        if (camBoxes) setBoxes(camBoxes);
-      } catch {}
-    };
-    return () => es.close();
-  }, [cameraView.camera.camera_id]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
