@@ -24,6 +24,7 @@ import {
 type MapMode = "realtime" | "traffic" | "prediction";
 
 const POLL_INTERVAL_MS = 3000;
+const PREDICTION_REFRESH_INTERVAL_MS = 15 * 60_000;
 const GRAY = "#7f8c8d";
 
 const STOPS = [
@@ -51,9 +52,16 @@ function riskToColor(score: number): string {
 }
 
 function predictionRiskColor(score: number): string {
-  if (score < 0.25) return "#2ecc71";
-  if (score < 0.5) return "#f1c40f";
-  return "#e74c3c";
+  if (score < 0.3) {
+    const t = Math.max(0, score) / 0.3;
+    return hexLerp("#16a765", "#7fcf3a", t);
+  }
+  if (score < 0.5) {
+    const t = Math.sqrt((score - 0.3) / 0.2);
+    return hexLerp("#d6d22a", "#f1c40f", t);
+  }
+  const t = Math.min(1, (score - 0.5) / 0.5);
+  return hexLerp("#f1c40f", "#e74c3c", t);
 }
 
 export function HomePage() {
@@ -66,6 +74,7 @@ export function HomePage() {
   const [predictionData, setPredictionData] = useState<RoadRiskPredictionResponse | null>(null);
   const [predictionLoading, setPredictionLoading] = useState(false);
   const [predictionError, setPredictionError] = useState<string | null>(null);
+  const selectedSegmentIdRef = useRef<string | null>(null);
 
   const nodes = !demoDataEnabled ? scenario.nodes : [];
   const segments = !demoDataEnabled ? scenario.segments : [];
@@ -86,6 +95,10 @@ export function HomePage() {
       setSelectedSegmentId(null);
     }
   }, [demoDataEnabled]);
+
+  useEffect(() => {
+    selectedSegmentIdRef.current = selectedSegmentId;
+  }, [selectedSegmentId]);
 
   useEffect(() => {
     if (demoDataEnabled || mode !== "prediction" || segments.length === 0) return;
@@ -111,7 +124,7 @@ export function HomePage() {
     const poll = () => {
       setPredictionLoading(true);
       setPredictionError(null);
-      fetchRoadRiskPredictions(inputs, selectedSegmentId)
+      fetchRoadRiskPredictions(inputs, selectedSegmentIdRef.current)
         .then((data) => {
           if (!cancelled) setPredictionData(data);
         })
@@ -121,7 +134,7 @@ export function HomePage() {
         .finally(() => {
           if (cancelled) return;
           setPredictionLoading(false);
-          timeoutId = window.setTimeout(poll, 15 * 60_000);
+          timeoutId = window.setTimeout(poll, PREDICTION_REFRESH_INTERVAL_MS);
         });
     };
     poll();
@@ -129,7 +142,7 @@ export function HomePage() {
       cancelled = true;
       if (timeoutId !== null) window.clearTimeout(timeoutId);
     };
-  }, [demoDataEnabled, mode, nodes, segments, selectedSegmentId]);
+  }, [demoDataEnabled, mode, nodes, segments]);
 
   useEffect(() => {
     if (demoDataEnabled) {
@@ -655,8 +668,8 @@ function EventLayer({
 function MapLegend({ mode }: { mode: MapMode }) {
   const rows = mode === "prediction"
     ? [
-        ["#2ecc71", "0-25% 低风险"],
-        ["#f1c40f", "25-50% 中风险"],
+        ["#2ecc71", "0-30% 低风险"],
+        ["#f1c40f", "30-50% 中风险"],
         ["#e74c3c", "50%以上 高风险"],
       ]
     : mode === "realtime"
@@ -717,7 +730,7 @@ function SelectedRoadPopup({
   const dynamicRoad = getDynamicRoadCondition(prediction, segment);
 
   const riskToText = (score: number) => {
-    if (score < 0.25) return "低风险";
+    if (score < 0.3) return "低风险";
     if (score < 0.5) return "中风险";
     return "高风险";
   };
