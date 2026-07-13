@@ -378,7 +378,7 @@ function WebRTCTile({
   onToggleExpand: (id: string) => void;
   onSelect: (view: CameraView) => void;
 }) {
-  const mjpegUrl = `/${view.camera.camera_id}`;
+  const mjpegUrl = `/api/v1/live/${view.camera.camera_id}/mjpeg`;
   const [imgError, setImgError] = useState(false);
   const [boxes, setBoxes] = useState<{track_id: number; class_name: string; bbox: number[]}[]>([]);
   const [trafficFlow, setTrafficFlow] = useState<{entry_count: number; exit_count: number; flow_per_min: number} | null>(null);
@@ -741,7 +741,7 @@ function DemoMonitorModal({ view, onClose }: { view: CameraView; onClose: () => 
 }
 
 function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: CameraView; vehicleCount: number; onClose: () => void }) {
-  const mjpegUrl = `/${cameraView.camera.camera_id}`;
+  const mjpegUrl = `/api/v1/live/${cameraView.camera.camera_id}/mjpeg`;
   const [imgError, setImgError] = useState(false);
   const [boxes, setBoxes] = useState<{track_id: number; class_name: string; bbox: number[]}[]>([]);
   const imgRef = useRef<HTMLImageElement>(null);
