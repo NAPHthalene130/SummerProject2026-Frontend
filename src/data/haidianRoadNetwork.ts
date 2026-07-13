@@ -1,6 +1,6 @@
 import type { RoadNode, CameraPoint, RoadSegment } from './standardRoadNetwork';
 
-export const haidianNodes: RoadNode[] = [
+const haidianNodeData: Array<Pick<RoadNode, "node_id" | "name" | "lng" | "lat">> = [
   {
     "node_id": "N01",
     "name": "苏州街-海淀南路",
@@ -182,7 +182,15 @@ export const haidianNodes: RoadNode[] = [
     "lat": 40.0276639704169
   }
 ];
-export const haidianCameras: CameraPoint[] = [
+
+export const haidianNodes: RoadNode[] = haidianNodeData.map((node) => ({
+  ...node,
+  x: 0,
+  y: 0,
+  type: "normal",
+}));
+
+const haidianCameraData: Array<Pick<CameraPoint, "camera_id" | "name" | "lng" | "lat" | "status">> = [
   {
     "camera_id": "C01",
     "name": "苏州街-海淀南路监控",
@@ -394,6 +402,14 @@ export const haidianCameras: CameraPoint[] = [
     "status": "online"
   }
 ];
+
+export const haidianCameras: CameraPoint[] = haidianCameraData.map((camera) => ({
+  ...camera,
+  segment_id: "",
+  x: 0,
+  y: 0,
+}));
+
 export const haidianSegments: RoadSegment[] = [
   {
     "segment_id": "S-25-05",
