@@ -39,6 +39,36 @@ export interface RisksResponse {
   detailed: Record<string, RiskDetail>;
 }
 
+export interface UserItem {
+  user_id: number;
+  user_name: string;
+  user_type: string;
+}
+
+export interface UserWritePayload {
+  user_name: string;
+  user_type: string;
+  password?: string;
+}
+
+export interface UserLoginPayload {
+  user_name: string;
+  password: string;
+}
+
+export interface MobileReport {
+  report_id: number; reporter_user_id: number; reporter_name: string; title: string;
+  location: string; detail: string; severity: "low" | "medium" | "high";
+  event_type: string; image_urls: string[]; status: "pending" | "converted" | "rejected";
+  created_at: string; work_order_id?: string;
+  review_message?: string; reviewed_at?: string;
+}
+
+export interface AgentChatResponse {
+  reply: string;
+  thread_id: string;
+}
+
 class ApiError extends Error {
   constructor(
     public status: number,
@@ -49,12 +79,37 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+async function request<T>(url: string, init?: RequestInit, timeoutMs = 12_000): Promise<T> {
+  const timeoutController = init?.signal ? null : new AbortController();
+  const timeoutId = timeoutController
+    ? window.setTimeout(() => timeoutController.abort(), timeoutMs)
+    : null;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      signal: init?.signal ?? timeoutController?.signal,
+    });
+  } catch (error) {
+    if (timeoutController?.signal.aborted) {
+      throw new ApiError(408, "请求超时，请检查后端服务与数据库连接");
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+  }
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new ApiError(response.status, text || `HTTP ${response.status}`);
+    let message = text;
+    try {
+      const payload = JSON.parse(text) as { detail?: string };
+      message = payload.detail ?? text;
+    } catch {
+      // Keep non-JSON error responses unchanged.
+    }
+    throw new ApiError(response.status, message || `HTTP ${response.status}`);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -86,6 +141,43 @@ export function fetchStaff(): Promise<StaffMember[]> {
   return request<StaffMember[]>("/api/v1/staff/");
 }
 
+export function chatWithAgent(message: string, threadId?: string): Promise<AgentChatResponse> {
+  return request<AgentChatResponse>("/api/v1/agent/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, thread_id: threadId ?? null }),
+  }, 60_000);
+}
+
+export function fetchMobileReports(): Promise<MobileReport[]> {
+  return request<MobileReport[]>("/api/v1/mobile-reports?status=pending");
+}
+
+export function convertMobileReport(reportId: number, requiredCategory: string): Promise<MobileReport> {
+  return request<MobileReport>(`/api/v1/mobile-reports/${reportId}/convert`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ required_category: requiredCategory }),
+  });
+}
+
+export function rejectMobileReport(reportId: number, reviewMessage: string): Promise<MobileReport> {
+  return request<MobileReport>(`/api/v1/mobile-reports/${reportId}/reject`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ review_message: reviewMessage }),
+  });
+}
+
+export function reviewWorkOrderFeedback(
+  workOrderId: string,
+  decision: "approve" | "reject",
+  reviewMessage?: string,
+): Promise<WorkOrderItem> {
+  return request<WorkOrderItem>(`/api/v1/work-orders/${encodeURIComponent(workOrderId)}/feedback-review`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision, review_message: reviewMessage }),
+  });
+}
+
 export function dispatchWorkOrder(workOrderId: string, userId: string): Promise<WorkOrderItem> {
   return request<WorkOrderItem>(`/api/v1/work-orders/${encodeURIComponent(workOrderId)}/dispatch`, {
     method: "PUT",
@@ -107,4 +199,77 @@ export function updateWorkOrderStatus(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+export function fetchUsers(): Promise<UserItem[]> {
+  return request<UserItem[]>("/api/v1/users/");
+}
+
+export interface MobileUserItem {
+  user_id: number;
+  name: string;
+  phone: string;
+  personnel_category: string;
+  role_name: string;
+  site: string;
+}
+
+export interface MobileUserWritePayload {
+  name: string;
+  phone: string;
+  personnel_category: string;
+  site: string;
+  password?: string;
+}
+
+export function loginUser(body: UserLoginPayload): Promise<UserItem> {
+  return request<UserItem>("/api/v1/users/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function createUser(body: UserWritePayload): Promise<UserItem> {
+  return request<UserItem>("/api/v1/users/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateUser(userId: number, body: UserWritePayload): Promise<UserItem> {
+  return request<UserItem>(`/api/v1/users/${userId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteUser(userId: number): Promise<void> {
+  return request<void>(`/api/v1/users/${userId}`, { method: "DELETE" });
+}
+
+export function fetchMobileUsers(): Promise<MobileUserItem[]> {
+  return request<MobileUserItem[]>("/api/v1/mobile-users");
+}
+
+export function createMobileUser(body: MobileUserWritePayload & { password: string }): Promise<MobileUserItem> {
+  return request<MobileUserItem>("/api/v1/mobile-users/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateMobileUser(userId: number, body: MobileUserWritePayload): Promise<MobileUserItem> {
+  return request<MobileUserItem>(`/api/v1/mobile-users/${userId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteMobileUser(userId: number): Promise<void> {
+  return request<void>(`/api/v1/mobile-users/${userId}`, { method: "DELETE" });
 }
