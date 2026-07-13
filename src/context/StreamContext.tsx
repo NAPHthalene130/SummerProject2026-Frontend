@@ -18,7 +18,7 @@ interface StreamState {
   lanes: Record<string, number>;
 }
 
-const StreamContext = createContext<StreamState>({ boxes: {}, traffic: {} });
+const StreamContext = createContext<StreamState>({ boxes: {}, traffic: {}, lanes: {} });
 
 export function StreamProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<StreamState>({ boxes: {}, traffic: {}, lanes: {} });
@@ -26,13 +26,20 @@ export function StreamProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const es = new EventSource("/api/v1/cameras/boxes/stream");
+    let opened = false;
     esRef.current = es;
+    es.onopen = () => { opened = true; };
     es.onmessage = (e) => {
       try {
         const all = JSON.parse(e.data);
         const { _traffic, _lanes, _derived, ...boxes } = all;
         setState({ boxes, traffic: _traffic || {}, lanes: _lanes || {} });
       } catch {}
+    };
+    es.onerror = () => {
+      if (opened) return;
+      es.close();
+      if (esRef.current === es) esRef.current = null;
     };
     return () => {
       es.close();

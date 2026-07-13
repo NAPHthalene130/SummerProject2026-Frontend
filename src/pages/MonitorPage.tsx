@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CameraPoint, RoadSegment } from "../data/standardRoadNetwork";
 import { useDataMode } from "../context/DataModeContext";
-import { useStreamState } from "../context/StreamContext";
+import { StreamProvider, useStreamState } from "../context/StreamContext";
 import { useScenarioPlayback } from "../hooks/useScenarioPlayback";
 import type { TrafficEvent } from "../types/business";
 import { getRiskColor, getRiskText, getTrafficFlowColor } from "../utils/riskStyle";
-import { fetchCameras, fetchCameraStats, type BackendCamera } from "../api/client";
+import { fetchCameras, fetchCameraStats, postLiveOffer, type BackendCamera } from "../api/client";
 
 interface CameraView {
   camera: CameraPoint;
@@ -44,7 +44,9 @@ const CACHE_KEY = "monitor_cameras";
 function getCached(): BackendCamera[] | null {
   try {
     const raw = sessionStorage.getItem(CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const cameras: unknown = JSON.parse(raw);
+    return Array.isArray(cameras) && cameras.length > 0 ? cameras as BackendCamera[] : null;
   } catch { return null; }
 }
 
@@ -53,6 +55,14 @@ function setCached(cams: BackendCamera[]) {
 }
 
 export function MonitorPage() {
+  return (
+    <StreamProvider>
+      <MonitorPageContent />
+    </StreamProvider>
+  );
+}
+
+function MonitorPageContent() {
   const scenario = useScenarioPlayback();
   const { demoDataEnabled } = useDataMode();
   const streamState = useStreamState();
@@ -68,29 +78,28 @@ export function MonitorPage() {
 
   useEffect(() => {
     if (demoDataEnabled) {
-      setCached([]);
+      try { sessionStorage.removeItem(CACHE_KEY); } catch {}
       setBackendCameras([]);
       setBackendError(null);
       setVehicleCountMap({});
       return;
     }
 
-    if (getCached()) return;
-
     let cancelled = false;
-    setBackendLoading(true);
+    const cachedCameras = getCached();
+    setBackendLoading(cachedCameras === null);
     setBackendError(null);
 
     fetchCameras()
       .then((cameras) => {
-        setCached(cameras);
         if (!cancelled) {
+          setCached(cameras);
           setBackendCameras(cameras);
           setPage(0);
         }
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
+        if (!cancelled && cachedCameras === null) {
           setBackendError(err instanceof Error ? err.message : "无法连接后端服务");
         }
       })
@@ -160,16 +169,10 @@ export function MonitorPage() {
     ["事故", wallStats.danger, "#EA4335"],
   ] as const;
 
-  const totalVehicles = demoDataEnabled ? 0 : Object.values(streamState.boxes).reduce((s, b) => s + b.length, 0);
+  const totalVehicles = demoDataEnabled ? 0 : Object.values(vehicleCountMap).reduce((sum, count) => sum + count, 0);
   const allTraffic = demoDataEnabled ? [] : Object.values(streamState.traffic);
   const totalEntry = allTraffic.reduce((s, t) => s + (t.entry_count || 0), 0);
   const totalExit = allTraffic.reduce((s, t) => s + (t.exit_count || 0), 0);
-  const totalLanes = demoDataEnabled ? 0 : Object.values(streamState.lanes).reduce((s, v) => s + v, 0);
-  const totalAvgSpeed = demoDataEnabled ? 0 : (() => {
-    const speeds = Object.values(streamState.boxes).flat().map(b => b.class_name ? 40 : 0);
-    const all = Object.values(streamState.traffic);
-    return all.length > 0 ? Math.round(all.reduce((s, t) => s + (t.flow_per_min || 0), 0) / all.length) : 0;
-  })();
 
   const isBackendEmpty = !demoDataEnabled && !backendLoading && !backendError && backendCameras.length === 0;
 
@@ -238,6 +241,7 @@ export function MonitorPage() {
               setBackendLoading(true);
               fetchCameras()
                 .then((cameras) => {
+                  setCached(cameras);
                   setBackendCameras(cameras);
                   setPage(0);
                 })
@@ -272,7 +276,16 @@ export function MonitorPage() {
             />
 
             <div className="monitor-wall-grid">
-              {pageItems.map((view) => (
+              {pageItems.map((view) => page === 0 ? (
+                <WebRTCTile
+                  key={view.camera.camera_id}
+                  view={view}
+                  vehicleCount={vehicleCountMap[view.camera.camera_id] ?? 0}
+                  expandedId={expandedId}
+                  onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
+                  onSelect={setActiveCamera}
+                />
+              ) : (
                 <MonitorTile
                   key={view.camera.camera_id}
                   view={view}
@@ -331,13 +344,8 @@ function MonitorTile({
   const hasSegment = view.segment !== null;
   const statusText = hasSegment ? getRiskText(view.segment!.status) : "在线";
   const borderColor = getCameraBorderColor(view);
-  const showVideo = view.channel && parseInt(view.channel.replace("CH-", "")) <= 6;
-  const mjpegUrl = showVideo ? `/api/v1/live/${view.camera.camera_id}/mjpeg` : "";
   const streamState = useStreamState();
   const trafficFlow = streamState.traffic[view.camera.camera_id] || null;
-  const laneCount = streamState.lanes[view.camera.camera_id] ?? 0;
-  const imgRef = useRef<HTMLImageElement>(null);
-  const [imgError, setImgError] = useState(false);
 
   return (
     <article
@@ -355,19 +363,7 @@ function MonitorTile({
         {hasSegment ? (
           <div className="status-ribbon" style={{ background: borderColor }}>{getRiskText(view.segment!.status)}</div>
         ) : null}
-        {showVideo ? (
-          <div style={{ position: "relative", width: "100%", height: "100%", minHeight: 160 }}>
-            {imgError ? (
-              <div className="webrtc-placeholder"><span style={{ color: "#ff8a80" }}>连接失败</span></div>
-            ) : (
-              <img ref={imgRef} src={mjpegUrl} alt={view.camera.name} className="monitor-live-video"
-                style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
-                onError={() => setImgError(true)} />
-            )}
-          </div>
-        ) : (
-          <div className="mock-traffic-lines"><i /><i /><i /></div>
-        )}
+        <div className="mock-traffic-lines"><i /><i /><i /></div>
         <div className="video-caption">
           <b>{view.camera.name}</b>
           {hasSegment ? <span>{view.segment!.name}</span> : null}
@@ -426,12 +422,14 @@ function WebRTCTile({
   onToggleExpand: (id: string) => void;
   onSelect: (view: CameraView) => void;
 }) {
-  const mjpegUrl = `/api/v1/live/${view.camera.camera_id}/mjpeg`;
-  const [imgError, setImgError] = useState(false);
+  const { stream, connecting, error } = useWebRTC(view.camera.camera_id);
   const streamState = useStreamState();
   const trafficFlow = streamState.traffic[view.camera.camera_id] || null;
-  const laneCount = streamState.lanes[view.camera.camera_id] ?? 0;
-  const imgRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.srcObject = stream;
+  }, [stream]);
 
   const hasSegment = view.segment !== null;
   const statusText = hasSegment ? getRiskText(view.segment!.status) : "在线";
@@ -453,22 +451,15 @@ function WebRTCTile({
         {hasSegment ? (
           <div className="status-ribbon" style={{ background: borderColor }}>{getRiskText(view.segment!.status)}</div>
         ) : null}
-        <div style={{ position: "relative", width: "100%", height: "100%", minHeight: 160 }}>
-          {imgError ? (
-            <div className="webrtc-placeholder">
-              <span style={{ color: "#ff8a80" }}>连接失败</span>
-            </div>
-          ) : (
-            <img
-              ref={imgRef}
-              src={mjpegUrl}
-              alt={view.camera.name}
-              className="monitor-live-video"
-              style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
-              onError={() => setImgError(true)}
-            />
-          )}
-        </div>
+        {connecting ? (
+          <div className="webrtc-placeholder"><span style={{ color: "#72d4ff" }}>连接中…</span></div>
+        ) : error ? (
+          <div className="webrtc-placeholder"><span style={{ color: "#ff8a80" }}>连接失败</span></div>
+        ) : stream ? (
+          <video ref={videoRef} autoPlay playsInline muted className="monitor-live-video" />
+        ) : (
+          <div className="webrtc-placeholder"><span>等待视频流…</span></div>
+        )}
         <div className="video-caption">
           <b>{view.camera.name}</b>
           {hasSegment ? <span>{view.segment!.name}</span> : null}
@@ -484,9 +475,9 @@ function WebRTCTile({
           </>
         ) : (
           <>
+            <span>识别车辆 {vehicleCount}</span>
             <span>驶入 {trafficFlow?.entry_count ?? "-"}</span>
             <span>驶出 {trafficFlow?.exit_count ?? "-"}</span>
-            <span>车流 {trafficFlow?.flow_per_min ?? "-"}/min</span>
           </>
         )}
         <button onClick={() => onToggleExpand(view.camera.camera_id)}>详情</button>
@@ -740,13 +731,127 @@ function DemoMonitorModal({ view, onClose }: { view: CameraView; onClose: () => 
   );
 }
 
+function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 3000) {
+  if (pc.iceGatheringState === "complete") return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const finish = () => {
+      window.clearTimeout(timeoutId);
+      pc.removeEventListener("icegatheringstatechange", handleStateChange);
+      resolve();
+    };
+    const handleStateChange = () => {
+      if (pc.iceGatheringState === "complete") finish();
+    };
+    const timeoutId = window.setTimeout(finish, timeoutMs);
+    pc.addEventListener("icegatheringstatechange", handleStateChange);
+  });
+}
+
+function useWebRTC(cameraId: string) {
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const closeCurrentPeer = useCallback(() => {
+    const pc = pcRef.current;
+    pcRef.current = null;
+    if (!pc) return;
+    pc.ontrack = null;
+    pc.onconnectionstatechange = null;
+    if (pc.connectionState !== "closed") pc.close();
+  }, []);
+
+  const connect = useCallback(async () => {
+    closeCurrentPeer();
+    setConnecting(true);
+    setError(null);
+    setStream(null);
+
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
+    pcRef.current = pc;
+    pc.addTransceiver("video", { direction: "recvonly" });
+
+    pc.ontrack = (event) => {
+      if (pcRef.current !== pc) return;
+      setStream(event.streams[0] ?? new MediaStream([event.track]));
+      setConnecting(false);
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pcRef.current !== pc || pc.connectionState !== "failed") return;
+      pcRef.current = null;
+      pc.ontrack = null;
+      pc.onconnectionstatechange = null;
+      pc.close();
+      setError("WebRTC 连接已断开");
+      setConnecting(false);
+      setStream(null);
+    };
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await waitForIceGathering(pc);
+
+      if (pcRef.current !== pc) {
+        pc.close();
+        return;
+      }
+
+      const answer = await postLiveOffer(cameraId, {
+        sdp: pc.localDescription?.sdp ?? offer.sdp ?? "",
+        type: pc.localDescription?.type ?? offer.type ?? "offer",
+      });
+
+      if (pcRef.current !== pc) {
+        pc.close();
+        return;
+      }
+
+      await pc.setRemoteDescription(new RTCSessionDescription(answer as RTCSessionDescriptionInit));
+      if (pcRef.current === pc) setConnecting(false);
+    } catch (err: unknown) {
+      if (pcRef.current === pc) {
+        pcRef.current = null;
+        pc.ontrack = null;
+        pc.onconnectionstatechange = null;
+        setError(err instanceof Error ? err.message : "WebRTC 连接失败");
+        setConnecting(false);
+        setStream(null);
+      }
+      if (pc.connectionState !== "closed") pc.close();
+    }
+  }, [cameraId, closeCurrentPeer]);
+
+  useEffect(() => {
+    void connect();
+    return closeCurrentPeer;
+  }, [connect, closeCurrentPeer]);
+
+  const disconnect = useCallback(() => {
+    closeCurrentPeer();
+    setStream(null);
+    setConnecting(false);
+    setError(null);
+  }, [closeCurrentPeer]);
+
+  return { stream, connecting, error, disconnect };
+}
+
 
 function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: CameraView; vehicleCount: number; onClose: () => void }) {
-  const mjpegUrl = `/api/v1/live/${cameraView.camera.camera_id}/mjpeg`;
-  const [imgError, setImgError] = useState(false);
-  const imgRef = useRef<HTMLImageElement>(null);
+  const { stream, connecting, error, disconnect } = useWebRTC(cameraView.camera.camera_id);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.srcObject = stream;
+  }, [stream]);
 
   const handleClose = () => {
+    disconnect();
     onClose();
   };
 
@@ -758,18 +863,21 @@ function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: C
           <div className="live-badge">LIVE</div>
           <h2>{cameraView.camera.name}</h2>
           <p>{cameraView.streamLabel} · {cameraView.channel}</p>
-          <div style={{ position: "relative" }}>
-            {imgError ? (
-              <div className="risk-warning" style={{ marginTop: 12 }}>视频流加载失败</div>
-            ) : null}
-            <img
-              ref={imgRef}
-              src={mjpegUrl}
-              alt={cameraView.camera.name}
+          {error ? (
+            <div className="risk-warning" style={{ marginTop: 12 }}>{error}</div>
+          ) : connecting ? (
+            <span style={{ color: "#72d4ff" }}>正在建立 WebRTC 连接…</span>
+          ) : stream ? (
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
               style={{ width: "100%", height: "auto", maxHeight: 360, display: "block", marginTop: 8 }}
-              onError={() => setImgError(true)}
             />
-          </div>
+          ) : (
+            <span style={{ color: "#aaa" }}>等待视频流…</span>
+          )}
         </div>
         <div className="modal-video-info">
           <div><span>摄像头ID</span><b>{cameraView.camera.camera_id}</b></div>
