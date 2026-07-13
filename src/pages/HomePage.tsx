@@ -75,10 +75,21 @@ export function HomePage() {
   const [predictionData, setPredictionData] = useState<RoadRiskPredictionResponse | null>(null);
   const [predictionLoading, setPredictionLoading] = useState(false);
   const [predictionError, setPredictionError] = useState<string | null>(null);
+  const [roadTraffic, setRoadTraffic] = useState<Record<string, {total_vehicle_count: number; avg_speed: number; entry_count: number; exit_count: number; flow_per_min: number}>>({});
   const selectedSegmentIdRef = useRef<string | null>(null);
 
   const nodes = !demoDataEnabled ? scenario.nodes : [];
-  const segments = !demoDataEnabled ? scenario.segments : [];
+  const rawSegments = !demoDataEnabled ? scenario.segments : [];
+  const segments = useMemo(() => rawSegments.map(seg => {
+    const camIds = (seg.camera_ids || []).map(c => c.replace(/_/g, "-").replace(/^cam-0?(\d+)$/, "cam-$1"));
+    const segData = camIds.map(id => roadTraffic[id] || {}).filter((t: any) => t.total_vehicle_count !== undefined);
+    if (segData.length === 0) return seg;
+    return {
+      ...seg,
+      traffic_flow: Math.round(segData.reduce((s: number, t: any) => s + (t.flow_per_min || 0), 0)),
+      avg_speed: Math.round(segData.reduce((s: number, t: any) => s + (t.avg_speed || 0), 0) / segData.length),
+    };
+  }), [rawSegments, roadTraffic]);
   const cameras = !demoDataEnabled ? scenario.cameras : [];
   const events = !demoDataEnabled ? scenario.events : [];
   const selectedSegment = segments.find((segment) => segment.segment_id === selectedSegmentId) ?? null;
@@ -179,6 +190,18 @@ export function HomePage() {
     return () => { cancelled = true; };
   }, [demoDataEnabled]);
 
+  useEffect(() => {
+    if (demoDataEnabled) return;
+    let cancelled = false;
+    const poll = () => {
+      if (cancelled) return;
+      fetch("/api/v1/roads/traffic").then(r => r.json()).then(d => { if (!cancelled) setRoadTraffic(d.cameras || {}); }).catch(() => {});
+      setTimeout(poll, 3000);
+    };
+    poll();
+    return () => { cancelled = true; };
+  }, [demoDataEnabled]);
+
   return (
     <section className="home-command-page">
       <RoadMapView
@@ -230,6 +253,7 @@ export function HomePage() {
           predictionData={predictionData}
           predictionLoading={predictionLoading}
           predictionError={predictionError}
+          roadTraffic={roadTraffic}
           recentEvent={events.find((event) => event.segment_id === selectedSegment.segment_id)?.description ?? "暂无"}
           onClose={() => setSelectedSegmentId(null)}
         />
@@ -397,10 +421,17 @@ function getDynamicRoadCondition(prediction: RoadRiskPrediction | null, segment:
   };
 }
 
+function normalizeCamId(id: string): string {
+  const m = id.match(/^cam[-_](\d+)$/i);
+  return m ? `C${String(Number(m[1])).padStart(2, "0")}` : id;
+}
+
 function segAvgRisk(seg: RoadSegment, cameraRisks: Record<string, number>): number {
   const ids = seg.camera_ids ?? [];
-  const vals = ids.map((id) => cameraRisks[id]).filter((v): v is number => v !== undefined);
-  return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0.5;
+  const vals = ids.map((id) => cameraRisks[normalizeCamId(id)]).filter((v): v is number => v !== undefined);
+  if (vals.length > 0) return vals.reduce((a, b) => a + b, 0) / vals.length;
+  const bySeg = cameraRisks[seg.segment_id];
+  return bySeg ?? 0.5;
 }
 
 function RoadMapView({
@@ -718,6 +749,7 @@ function SelectedRoadPopup({
   predictionData,
   predictionLoading,
   predictionError,
+  roadTraffic,
   recentEvent,
   onClose,
 }: {
@@ -729,12 +761,18 @@ function SelectedRoadPopup({
   predictionData: RoadRiskPredictionResponse | null;
   predictionLoading: boolean;
   predictionError: string | null;
+  roadTraffic: Record<string, any>;
   recentEvent: string;
   onClose: () => void;
 }) {
+  const nid = (id: string) => { const m = id.match(/^cam[-_](\d+)$/i); return m ? `C${String(Number(m[1])).padStart(2, "0")}` : id; };
+  const camIds = segment.camera_ids.map(c => c.replace(/_/g, "-").replace(/^cam-0?(\d+)$/, "cam-$1"));
+  const segTraffic = camIds.map(id => roadTraffic[id] || {}).filter((t: any) => t.total_vehicle_count !== undefined);
+  const realFlow = segTraffic.length > 0 ? Math.round(segTraffic.reduce((s: number, t: any) => s + (t.flow_per_min || 0), 0)) : segment.traffic_flow;
+  const realSpeed = segTraffic.length > 0 ? Math.round(segTraffic.reduce((s: number, t: any) => s + (t.avg_speed || 0), 0) / segTraffic.length) : segment.avg_speed;
   const segCameras = cameras.filter((c) => segment.camera_ids.includes(c.camera_id));
   const cameraRiskDetails = segCameras.flatMap((camera) => {
-    const risk = cameraRisks[camera.camera_id];
+    const risk = cameraRisks[nid(camera.camera_id)] ?? cameraRisks[camera.camera_id];
     return risk === undefined ? [] : [{ camera, risk }];
   });
   const lstmRisk = cameraRiskDetails.length > 0
@@ -770,8 +808,8 @@ function SelectedRoadPopup({
             <b style={{ color: lstmRisk !== null ? riskToColor(lstmRisk) : "#95a5a6" }}>
               {lstmRisk !== null ? `${(lstmRisk * 100).toFixed(1)}% (${realtimeRiskToText(lstmRisk)})` : "等待数据…"}
             </b>
-            <span>车流量</span><b>{segment.traffic_flow} 辆/min</b>
-            <span>平均车速</span><b>{segment.avg_speed} km/h</b>
+            <span>车流量</span><b>{realFlow} 辆/min</b>
+            <span>平均车速</span><b>{realSpeed} km/h</b>
           </>
         ) : null}
         {mode === "prediction" ? (

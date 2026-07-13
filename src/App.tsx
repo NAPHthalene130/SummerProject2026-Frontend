@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { DataModeProvider } from "./context/DataModeContext";
+import { StreamProvider } from "./context/StreamContext";
 import { HomePage } from "./pages/HomePage";
 import { MonitorPage } from "./pages/MonitorPage";
 import { UserPage } from "./pages/UserPage";
@@ -25,7 +26,9 @@ function pageFromHash(): ActivePage {
 export default function App() {
   return (
     <DataModeProvider>
-      <AppShell />
+      <StreamProvider>
+        <AppShell />
+      </StreamProvider>
     </DataModeProvider>
   );
 }
