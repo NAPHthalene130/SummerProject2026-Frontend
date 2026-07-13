@@ -381,6 +381,7 @@ function WebRTCTile({
   const mjpegUrl = `/${view.camera.camera_id}`;
   const [imgError, setImgError] = useState(false);
   const [boxes, setBoxes] = useState<{track_id: number; class_name: string; bbox: number[]}[]>([]);
+  const [trafficFlow, setTrafficFlow] = useState<{entry_count: number; exit_count: number; flow_per_min: number} | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -391,6 +392,10 @@ function WebRTCTile({
         const all = JSON.parse(e.data);
         const camBoxes = all[view.camera.camera_id];
         if (camBoxes) setBoxes(camBoxes);
+        const traffic = all["_traffic"];
+        if (traffic && traffic[view.camera.camera_id]) {
+          setTrafficFlow(traffic[view.camera.camera_id]);
+        }
       } catch {}
     };
     return () => es.close();
@@ -480,8 +485,8 @@ function WebRTCTile({
         ) : (
           <>
             <span>识别车辆 {vehicleCount}</span>
-            <span>经度 {view.camera.lng.toFixed(4)}</span>
-            <span>纬度 {view.camera.lat.toFixed(4)}</span>
+            <span>车流 {trafficFlow?.flow_per_min ?? "-"} 辆/min</span>
+            <span>进出 {trafficFlow?.entry_count ?? "-"}/{trafficFlow?.exit_count ?? "-"}</span>
           </>
         )}
         <button onClick={() => onToggleExpand(view.camera.camera_id)}>详情</button>
