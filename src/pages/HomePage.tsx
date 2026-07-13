@@ -24,6 +24,7 @@ import {
 type MapMode = "realtime" | "traffic" | "prediction";
 
 const POLL_INTERVAL_MS = 3000;
+const PREDICTION_REFRESH_INTERVAL_MS = 15 * 60_000;
 const GRAY = "#7f8c8d";
 
 const STOPS = [
@@ -51,9 +52,16 @@ function riskToColor(score: number): string {
 }
 
 function predictionRiskColor(score: number): string {
-  if (score < 0.25) return "#2ecc71";
-  if (score < 0.5) return "#f1c40f";
-  return "#e74c3c";
+  if (score < 0.3) {
+    const t = Math.max(0, score) / 0.3;
+    return hexLerp("#16a765", "#7fcf3a", t);
+  }
+  if (score < 0.5) {
+    const t = Math.sqrt((score - 0.3) / 0.2);
+    return hexLerp("#d6d22a", "#f1c40f", t);
+  }
+  const t = Math.min(1, (score - 0.5) / 0.5);
+  return hexLerp("#f1c40f", "#e74c3c", t);
 }
 
 export function HomePage() {
@@ -63,9 +71,11 @@ export function HomePage() {
   const [controlOpen, setControlOpen] = useState(false);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [cameraRisks, setCameraRisks] = useState<Record<string, number>>({});
+  const [rawCameraRisks, setRawCameraRisks] = useState<Record<string, number>>({});
   const [predictionData, setPredictionData] = useState<RoadRiskPredictionResponse | null>(null);
   const [predictionLoading, setPredictionLoading] = useState(false);
   const [predictionError, setPredictionError] = useState<string | null>(null);
+  const selectedSegmentIdRef = useRef<string | null>(null);
 
   const nodes = !demoDataEnabled ? scenario.nodes : [];
   const segments = !demoDataEnabled ? scenario.segments : [];
@@ -86,6 +96,10 @@ export function HomePage() {
       setSelectedSegmentId(null);
     }
   }, [demoDataEnabled]);
+
+  useEffect(() => {
+    selectedSegmentIdRef.current = selectedSegmentId;
+  }, [selectedSegmentId]);
 
   useEffect(() => {
     if (demoDataEnabled || mode !== "prediction" || segments.length === 0) return;
@@ -111,7 +125,7 @@ export function HomePage() {
     const poll = () => {
       setPredictionLoading(true);
       setPredictionError(null);
-      fetchRoadRiskPredictions(inputs, selectedSegmentId)
+      fetchRoadRiskPredictions(inputs, selectedSegmentIdRef.current)
         .then((data) => {
           if (!cancelled) setPredictionData(data);
         })
@@ -121,7 +135,7 @@ export function HomePage() {
         .finally(() => {
           if (cancelled) return;
           setPredictionLoading(false);
-          timeoutId = window.setTimeout(poll, 15 * 60_000);
+          timeoutId = window.setTimeout(poll, PREDICTION_REFRESH_INTERVAL_MS);
         });
     };
     poll();
@@ -129,11 +143,12 @@ export function HomePage() {
       cancelled = true;
       if (timeoutId !== null) window.clearTimeout(timeoutId);
     };
-  }, [demoDataEnabled, mode, nodes, segments, selectedSegmentId]);
+  }, [demoDataEnabled, mode, nodes, segments]);
 
   useEffect(() => {
     if (demoDataEnabled) {
       setCameraRisks({});
+      setRawCameraRisks({});
       return;
     }
     let cancelled = false;
@@ -143,6 +158,7 @@ export function HomePage() {
         .then((data) => {
           if (cancelled) return;
           const raw = data.camera_risks;
+          setRawCameraRisks(raw);
           const values = Object.values(raw);
           if (values.length === 0) return;
           const min = Math.min(...values);
@@ -209,6 +225,7 @@ export function HomePage() {
           segment={selectedSegment}
           mode={mode}
           cameras={cameras}
+          cameraRisks={rawCameraRisks}
           prediction={selectedPrediction}
           predictionData={predictionData}
           predictionLoading={predictionLoading}
@@ -297,10 +314,10 @@ function MapAssetDock({
             ? getTrafficFlowColor(segment.traffic_flow)
             : mode === "prediction"
               ? hasRisk ? predictionRiskColor(risk) : GRAY
-              : hasRisk ? riskToColor(risk) : getRiskColor(segment.status);
+              : hasRisk ? riskToColor(risk) : GRAY;
           const label = mode === "traffic"
             ? String(segment.traffic_flow)
-            : hasRisk ? `${(risk * 100).toFixed(0)}%` : getRiskText(segment.status);
+            : hasRisk ? `${(risk * 100).toFixed(0)}%` : "等待数据";
           return (
             <button
               key={segment.segment_id}
@@ -496,7 +513,7 @@ function RoadLayer({
     }
     const activeRisks = mode === "prediction" ? predictionRisks : cameraRisks;
     if (Object.keys(activeRisks).length === 0) {
-      for (const seg of segments) map.set(seg.segment_id, mode === "prediction" ? GRAY : getRiskColor(seg.status));
+      for (const seg of segments) map.set(seg.segment_id, GRAY);
       return map;
     }
     for (const seg of segments) {
@@ -655,8 +672,8 @@ function EventLayer({
 function MapLegend({ mode }: { mode: MapMode }) {
   const rows = mode === "prediction"
     ? [
-        ["#2ecc71", "0-25% 低风险"],
-        ["#f1c40f", "25-50% 中风险"],
+        ["#2ecc71", "0-30% 低风险"],
+        ["#f1c40f", "30-50% 中风险"],
         ["#e74c3c", "50%以上 高风险"],
       ]
     : mode === "realtime"
@@ -696,6 +713,7 @@ function SelectedRoadPopup({
   segment,
   mode,
   cameras,
+  cameraRisks,
   prediction,
   predictionData,
   predictionLoading,
@@ -706,6 +724,7 @@ function SelectedRoadPopup({
   segment: RoadSegment;
   mode: MapMode;
   cameras: CameraPoint[];
+  cameraRisks: Record<string, number>;
   prediction: RoadRiskPrediction | null;
   predictionData: RoadRiskPredictionResponse | null;
   predictionLoading: boolean;
@@ -714,12 +733,26 @@ function SelectedRoadPopup({
   onClose: () => void;
 }) {
   const segCameras = cameras.filter((c) => segment.camera_ids.includes(c.camera_id));
+  const cameraRiskDetails = segCameras.flatMap((camera) => {
+    const risk = cameraRisks[camera.camera_id];
+    return risk === undefined ? [] : [{ camera, risk }];
+  });
+  const lstmRisk = cameraRiskDetails.length > 0
+    ? cameraRiskDetails.reduce((sum, item) => sum + item.risk, 0) / cameraRiskDetails.length
+    : null;
   const dynamicRoad = getDynamicRoadCondition(prediction, segment);
 
-  const riskToText = (score: number) => {
-    if (score < 0.25) return "低风险";
+  const predictionRiskToText = (score: number) => {
+    if (score < 0.3) return "低风险";
     if (score < 0.5) return "中风险";
     return "高风险";
+  };
+
+  const realtimeRiskToText = (score: number) => {
+    if (score <= 0.25) return "正常";
+    if (score <= 0.5) return "繁忙";
+    if (score <= 0.75) return "高风险";
+    return "危险";
   };
 
   return (
@@ -731,6 +764,16 @@ function SelectedRoadPopup({
         <span>道路编号</span><b>{segment.segment_id}</b>
         <span>道路类型</span><b>{getRoadTypeText(segment.road_type)}</b>
         <span>当前模式</span><b>{mode === "realtime" ? "实时风险" : mode === "traffic" ? "车流密度" : "风险预测"}</b>
+        {mode === "realtime" ? (
+          <>
+            <span>LSTM 实时风险</span>
+            <b style={{ color: lstmRisk !== null ? riskToColor(lstmRisk) : "#95a5a6" }}>
+              {lstmRisk !== null ? `${(lstmRisk * 100).toFixed(1)}% (${realtimeRiskToText(lstmRisk)})` : "等待数据…"}
+            </b>
+            <span>车流量</span><b>{segment.traffic_flow} 辆/min</b>
+            <span>平均车速</span><b>{segment.avg_speed} km/h</b>
+          </>
+        ) : null}
         {mode === "prediction" ? (
           <>
             <span>预测风险</span>
@@ -752,9 +795,28 @@ function SelectedRoadPopup({
             <span>道路数据</span><b>{prediction?.road.source ?? "前端道路元数据"}</b>
           </>
         ) : null}
-        <span>风险等级</span><b>{mode === "prediction" && prediction ? riskToText(prediction.risk_score) : getRiskText(segment.status)}</b>
+        <span>风险等级</span>
+        <b>
+          {mode === "prediction" && prediction
+            ? predictionRiskToText(prediction.risk_score)
+            : mode === "realtime" && lstmRisk !== null
+              ? realtimeRiskToText(lstmRisk)
+              : getRiskText(segment.status)}
+        </b>
         <span>关联摄像头</span><b>{segCameras.length ? segCameras.map((c) => c.name).join("、") : "无"}</b>
       </div>
+      {mode === "realtime" && cameraRiskDetails.length > 0 ? (
+        <div className="segment-event-line">
+          <em>摄像头风险明细</em>
+          <p>
+            {cameraRiskDetails.map(({ camera, risk }) => (
+              <span key={camera.camera_id} style={{ marginRight: 8, display: "inline-block" }}>
+                {camera.name}: {(risk * 100).toFixed(1)}%
+              </span>
+            ))}
+          </p>
+        </div>
+      ) : null}
       {mode === "prediction" ? (
         <div className="segment-event-line">
           <em>预测依据</em>

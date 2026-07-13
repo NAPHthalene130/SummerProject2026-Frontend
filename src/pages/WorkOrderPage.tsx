@@ -633,7 +633,7 @@ export function WorkOrderPage() {
               {!demoDataEnabled && loading ? (
                 <div className="dispatch-empty-state">
                   <b>正在读取后端工单</b>
-                  <span>正在加载数据库中的模拟工单、派发人员和处置记录。</span>
+                  <span>正在加载数据库中的工单、派发人员和处置记录。</span>
                   <small>GET /api/v1/work-orders · GET /api/v1/staff</small>
                 </div>
               ) : null}
