@@ -39,6 +39,8 @@ function backendCameraToView(camera: BackendCamera, index: number): CameraView {
   };
 }
 
+let _cachedCameras: BackendCamera[] | null = null;
+
 export function MonitorPage() {
   const scenario = useScenarioPlayback();
   const { demoDataEnabled } = useDataMode();
@@ -46,18 +48,21 @@ export function MonitorPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [activeCamera, setActiveCamera] = useState<CameraView | null>(null);
 
-  const [backendCameras, setBackendCameras] = useState<BackendCamera[]>([]);
-  const [backendLoading, setBackendLoading] = useState(false);
+  const [backendCameras, setBackendCameras] = useState<BackendCamera[]>(_cachedCameras || []);
+  const [backendLoading, setBackendLoading] = useState(_cachedCameras ? false : true);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [vehicleCountMap, setVehicleCountMap] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (demoDataEnabled) {
+      _cachedCameras = null;
       setBackendCameras([]);
       setBackendError(null);
       setVehicleCountMap({});
       return;
     }
+
+    if (_cachedCameras) return;
 
     let cancelled = false;
     setBackendLoading(true);
@@ -65,6 +70,7 @@ export function MonitorPage() {
 
     fetchCameras()
       .then((cameras) => {
+        _cachedCameras = cameras;
         if (!cancelled) {
           setBackendCameras(cameras);
           setPage(0);
@@ -390,27 +396,30 @@ function WebRTCTile({
   useEffect(() => {
     const canvas = canvasRef.current;
     const img = imgRef.current;
-    if (!canvas || !img || !img.complete) return;
-    const vw = img.naturalWidth || img.clientWidth;
-    const vh = img.naturalHeight || img.clientHeight;
-    if (!vw || !vh) return;
+    if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    canvas.width = img.clientWidth;
-    canvas.height = img.clientHeight;
+    canvas.width = img ? img.clientWidth || 640 : 640;
+    canvas.height = img ? img.clientHeight || 480 : 480;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!img || !img.complete) return;
+    const vw = img.naturalWidth || img.clientWidth || 640;
+    const vh = img.naturalHeight || img.clientHeight || 480;
+    if (!vw || !vh) return;
     const sx = canvas.width / vw;
     const sy = canvas.height / vh;
     const COLORS = ["#ff4444","#44ff44","#4488ff","#ffaa00","#ff44ff","#44ffff"];
+    const drawn = new Set<number>();
     boxes.forEach((b, i) => {
       const [x1, y1, x2, y2] = b.bbox;
+      if (drawn.has(b.track_id)) return;
+      drawn.add(b.track_id);
       ctx.strokeStyle = COLORS[i % COLORS.length];
       ctx.lineWidth = 2;
       ctx.strokeRect(x1 * sx, y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
       ctx.fillStyle = COLORS[i % COLORS.length];
-      ctx.font = "12px monospace";
-      const label = `${b.class_name} #${b.track_id}`;
-      ctx.fillText(label, x1 * sx + 2, y1 * sy - 4);
+      ctx.font = "11px monospace";
+      ctx.fillText(`${b.class_name}`, x1 * sx + 2, y1 * sy - 4);
     });
   }, [boxes]);
 
@@ -737,26 +746,30 @@ function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: C
   useEffect(() => {
     const canvas = canvasRef.current;
     const img = imgRef.current;
-    if (!canvas || !img || !img.complete) return;
-    const vw = img.naturalWidth || img.clientWidth;
-    const vh = img.naturalHeight || img.clientHeight;
-    if (!vw || !vh) return;
+    if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    canvas.width = img.clientWidth;
-    canvas.height = img.clientHeight;
+    canvas.width = img ? img.clientWidth || 640 : 640;
+    canvas.height = img ? img.clientHeight || 480 : 480;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!img || !img.complete) return;
+    const vw = img.naturalWidth || img.clientWidth || 640;
+    const vh = img.naturalHeight || img.clientHeight || 480;
+    if (!vw || !vh) return;
     const sx = canvas.width / vw;
     const sy = canvas.height / vh;
     const COLORS = ["#ff4444","#44ff44","#4488ff","#ffaa00","#ff44ff","#44ffff"];
+    const drawn = new Set<number>();
     boxes.forEach((b, i) => {
+      if (drawn.has(b.track_id)) return;
+      drawn.add(b.track_id);
       const [x1, y1, x2, y2] = b.bbox;
       ctx.strokeStyle = COLORS[i % COLORS.length];
       ctx.lineWidth = 2;
       ctx.strokeRect(x1 * sx, y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
       ctx.fillStyle = COLORS[i % COLORS.length];
-      ctx.font = "12px monospace";
-      ctx.fillText(`${b.class_name} #${b.track_id}`, x1 * sx + 2, y1 * sy - 4);
+      ctx.font = "11px monospace";
+      ctx.fillText(`${b.class_name}`, x1 * sx + 2, y1 * sy - 4);
     });
   }, [boxes]);
 
