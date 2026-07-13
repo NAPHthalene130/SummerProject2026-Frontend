@@ -39,7 +39,18 @@ function backendCameraToView(camera: BackendCamera, index: number): CameraView {
   };
 }
 
-let _cachedCameras: BackendCamera[] | null = null;
+const CACHE_KEY = "monitor_cameras";
+
+function getCached(): BackendCamera[] | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function setCached(cams: BackendCamera[]) {
+  try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(cams)); } catch {}
+}
 
 export function MonitorPage() {
   const scenario = useScenarioPlayback();
@@ -48,21 +59,22 @@ export function MonitorPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [activeCamera, setActiveCamera] = useState<CameraView | null>(null);
 
-  const [backendCameras, setBackendCameras] = useState<BackendCamera[]>(_cachedCameras || []);
-  const [backendLoading, setBackendLoading] = useState(_cachedCameras ? false : true);
+  const cached = getCached();
+  const [backendCameras, setBackendCameras] = useState<BackendCamera[]>(cached || []);
+  const [backendLoading, setBackendLoading] = useState(cached ? false : true);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [vehicleCountMap, setVehicleCountMap] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (demoDataEnabled) {
-      _cachedCameras = null;
+      setCached([]);
       setBackendCameras([]);
       setBackendError(null);
       setVehicleCountMap({});
       return;
     }
 
-    if (_cachedCameras) return;
+    if (getCached()) return;
 
     let cancelled = false;
     setBackendLoading(true);
@@ -70,7 +82,7 @@ export function MonitorPage() {
 
     fetchCameras()
       .then((cameras) => {
-        _cachedCameras = cameras;
+        setCached(cameras);
         if (!cancelled) {
           setBackendCameras(cameras);
           setPage(0);

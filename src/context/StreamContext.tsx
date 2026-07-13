@@ -30,7 +30,7 @@ export function StreamProvider({ children }: { children: React.ReactNode }) {
     es.onmessage = (e) => {
       try {
         const all = JSON.parse(e.data);
-        const { _traffic, _lanes, ...boxes } = all;
+        const { _traffic, _lanes, _derived, ...boxes } = all;
         setState({ boxes, traffic: _traffic || {}, lanes: _lanes || {} });
       } catch {}
     };
