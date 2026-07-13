@@ -323,42 +323,10 @@ function MonitorTile({
   const showVideo = view.channel && parseInt(view.channel.replace("CH-", "")) <= 6;
   const mjpegUrl = showVideo ? `/api/v1/live/${view.camera.camera_id}/mjpeg` : "";
   const streamState = useStreamState();
-  const boxes = streamState.boxes[view.camera.camera_id] || [];
   const trafficFlow = streamState.traffic[view.camera.camera_id] || null;
   const laneCount = streamState.lanes[view.camera.camera_id] ?? 0;
   const imgRef = useRef<HTMLImageElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [imgError, setImgError] = useState(false);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const img = imgRef.current;
-    canvas.width = img ? img.clientWidth || 640 : 640;
-    canvas.height = img ? img.clientHeight || 480 : 480;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!img || !img.complete) return;
-    const vw = img.naturalWidth || img.clientWidth || 640;
-    const vh = img.naturalHeight || img.clientHeight || 480;
-    if (!vw || !vh) return;
-    const sx = canvas.width / vw;
-    const sy = canvas.height / vh;
-    const COLORS = ["#ff4444","#44ff44","#4488ff","#ffaa00","#ff44ff","#44ffff","#00ff88","#ff8800","#8888ff","#ff0088"];
-    const drawn = new Set<number>();
-    boxes.forEach((b, i) => {
-      if (drawn.has(b.track_id)) return;
-      drawn.add(b.track_id);
-      const [x1, y1, x2, y2] = b.bbox;
-      ctx.strokeStyle = COLORS[i % COLORS.length];
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x1 * sx, y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
-      ctx.fillStyle = COLORS[i % COLORS.length];
-      ctx.font = "11px monospace";
-      ctx.fillText(`${b.class_name}`, x1 * sx + 2, y1 * sy - 4);
-    });
-  }, [boxes]);
 
   return (
     <article
@@ -385,8 +353,6 @@ function MonitorTile({
                 style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
                 onError={() => setImgError(true)} />
             )}
-            <canvas ref={canvasRef} className="monitor-live-video"
-              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" }} />
           </div>
         ) : (
           <div className="mock-traffic-lines"><i /><i /><i /></div>
@@ -804,40 +770,7 @@ function DemoMonitorModal({ view, onClose }: { view: CameraView; onClose: () => 
 function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: CameraView; vehicleCount: number; onClose: () => void }) {
   const mjpegUrl = `/api/v1/live/${cameraView.camera.camera_id}/mjpeg`;
   const [imgError, setImgError] = useState(false);
-  const streamState = useStreamState();
-  const boxes = streamState.boxes[cameraView.camera.camera_id] || [];
   const imgRef = useRef<HTMLImageElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const img = imgRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    canvas.width = img ? img.clientWidth || 640 : 640;
-    canvas.height = img ? img.clientHeight || 480 : 480;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!img || !img.complete) return;
-    const vw = img.naturalWidth || img.clientWidth || 640;
-    const vh = img.naturalHeight || img.clientHeight || 480;
-    if (!vw || !vh) return;
-    const sx = canvas.width / vw;
-    const sy = canvas.height / vh;
-    const COLORS = ["#ff4444","#44ff44","#4488ff","#ffaa00","#ff44ff","#44ffff"];
-    const drawn = new Set<number>();
-    boxes.forEach((b, i) => {
-      if (drawn.has(b.track_id)) return;
-      drawn.add(b.track_id);
-      const [x1, y1, x2, y2] = b.bbox;
-      ctx.strokeStyle = COLORS[i % COLORS.length];
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x1 * sx, y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
-      ctx.fillStyle = COLORS[i % COLORS.length];
-      ctx.font = "11px monospace";
-      ctx.fillText(`${b.class_name}`, x1 * sx + 2, y1 * sy - 4);
-    });
-  }, [boxes]);
 
   const handleClose = () => {
     onClose();
@@ -861,10 +794,6 @@ function LiveMonitorModal({ cameraView, vehicleCount, onClose }: { cameraView: C
               alt={cameraView.camera.name}
               style={{ width: "100%", height: "auto", maxHeight: 360, display: "block", marginTop: 8 }}
               onError={() => setImgError(true)}
-            />
-            <canvas
-              ref={canvasRef}
-              style={{ position: "absolute", top: 8, left: 0, width: "100%", height: "auto", maxHeight: 360, pointerEvents: "none" }}
             />
           </div>
         </div>
