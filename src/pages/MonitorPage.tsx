@@ -320,6 +320,45 @@ function MonitorTile({
   const hasSegment = view.segment !== null;
   const statusText = hasSegment ? getRiskText(view.segment!.status) : "在线";
   const borderColor = getCameraBorderColor(view);
+  const showVideo = view.channel && parseInt(view.channel.replace("CH-", "")) <= 6;
+  const mjpegUrl = showVideo ? `/api/v1/live/${view.camera.camera_id}/mjpeg` : "";
+  const streamState = useStreamState();
+  const boxes = streamState.boxes[view.camera.camera_id] || [];
+  const trafficFlow = streamState.traffic[view.camera.camera_id] || null;
+  const laneCount = streamState.lanes[view.camera.camera_id] ?? 0;
+  const imgRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const img = imgRef.current;
+    canvas.width = img ? img.clientWidth || 640 : 640;
+    canvas.height = img ? img.clientHeight || 480 : 480;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!img || !img.complete) return;
+    const vw = img.naturalWidth || img.clientWidth || 640;
+    const vh = img.naturalHeight || img.clientHeight || 480;
+    if (!vw || !vh) return;
+    const sx = canvas.width / vw;
+    const sy = canvas.height / vh;
+    const COLORS = ["#ff4444","#44ff44","#4488ff","#ffaa00","#ff44ff","#44ffff","#00ff88","#ff8800","#8888ff","#ff0088"];
+    const drawn = new Set<number>();
+    boxes.forEach((b, i) => {
+      if (drawn.has(b.track_id)) return;
+      drawn.add(b.track_id);
+      const [x1, y1, x2, y2] = b.bbox;
+      ctx.strokeStyle = COLORS[i % COLORS.length];
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x1 * sx, y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
+      ctx.fillStyle = COLORS[i % COLORS.length];
+      ctx.font = "11px monospace";
+      ctx.fillText(`${b.class_name}`, x1 * sx + 2, y1 * sy - 4);
+    });
+  }, [boxes]);
 
   return (
     <article
@@ -337,9 +376,21 @@ function MonitorTile({
         {hasSegment ? (
           <div className="status-ribbon" style={{ background: borderColor }}>{getRiskText(view.segment!.status)}</div>
         ) : null}
-        <div className="mock-traffic-lines">
-          <i /><i /><i />
-        </div>
+        {showVideo ? (
+          <div style={{ position: "relative", width: "100%", height: "100%", minHeight: 160 }}>
+            {imgError ? (
+              <div className="webrtc-placeholder"><span style={{ color: "#ff8a80" }}>连接失败</span></div>
+            ) : (
+              <img ref={imgRef} src={mjpegUrl} alt={view.camera.name} className="monitor-live-video"
+                style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+                onError={() => setImgError(true)} />
+            )}
+            <canvas ref={canvasRef} className="monitor-live-video"
+              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" }} />
+          </div>
+        ) : (
+          <div className="mock-traffic-lines"><i /><i /><i /></div>
+        )}
         <div className="video-caption">
           <b>{view.camera.name}</b>
           {hasSegment ? <span>{view.segment!.name}</span> : null}
@@ -355,7 +406,8 @@ function MonitorTile({
           </>
         ) : (
           <>
-            <span>经度 {view.camera.lng.toFixed(4)}</span>
+            <span>车道 {laneCount}条</span>
+            <span>车流 {trafficFlow?.flow_per_min ?? "-"} 辆/min</span>
             <span>纬度 {view.camera.lat.toFixed(4)}</span>
             <span>状态 {statusText}</span>
           </>
