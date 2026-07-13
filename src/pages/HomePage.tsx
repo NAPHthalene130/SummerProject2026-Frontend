@@ -79,7 +79,17 @@ export function HomePage() {
   const selectedSegmentIdRef = useRef<string | null>(null);
 
   const nodes = !demoDataEnabled ? scenario.nodes : [];
-  const segments = !demoDataEnabled ? scenario.segments : [];
+  const rawSegments = !demoDataEnabled ? scenario.segments : [];
+  const segments = useMemo(() => rawSegments.map(seg => {
+    const camIds = (seg.camera_ids || []).map(c => c.replace(/_/g, "-").replace(/^cam-0?(\d+)$/, "cam-$1"));
+    const segData = camIds.map(id => roadTraffic[id] || {}).filter((t: any) => t.total_vehicle_count !== undefined);
+    if (segData.length === 0) return seg;
+    return {
+      ...seg,
+      traffic_flow: Math.round(segData.reduce((s: number, t: any) => s + (t.flow_per_min || 0), 0)),
+      avg_speed: Math.round(segData.reduce((s: number, t: any) => s + (t.avg_speed || 0), 0) / segData.length),
+    };
+  }), [rawSegments, roadTraffic]);
   const cameras = !demoDataEnabled ? scenario.cameras : [];
   const events = !demoDataEnabled ? scenario.events : [];
   const selectedSegment = segments.find((segment) => segment.segment_id === selectedSegmentId) ?? null;
