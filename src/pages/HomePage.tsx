@@ -438,7 +438,14 @@ function RoadMapView({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     try {
-      const map = L.map(containerRef.current, { center: [39.906, 116.396], zoom: 15, zoomControl: false });
+      const map = L.map(containerRef.current, {
+        center: [40.027, 116.281],
+        zoom: 15,
+        minZoom: 14,
+        maxBounds: L.latLngBounds([40.010, 116.255], [40.044, 116.307]),
+        maxBoundsViscosity: 0.8,
+        zoomControl: false,
+      });
       L.control.zoom({ position: "bottomleft" }).addTo(map);
       L.tileLayer("https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png", {
         maxZoom: 19,
