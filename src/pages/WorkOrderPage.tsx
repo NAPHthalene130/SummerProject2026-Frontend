@@ -711,7 +711,7 @@ export function WorkOrderPage() {
                     <span>等级 {getLevelText(order.event_level)}</span>
                     <span>摄像头 {order.camera_name}</span>
                     <span>派发 {order.assignee ?? "未派发"}</span>
-                    <span className="category-badge">要求 {categoryName(order.required_category)}</span>
+                    <span className="category-badge">建议 {categoryName(order.required_category)}</span>
                   </div>
                   <div className="row-actions">
                     {order.status === "unassigned" ? <button onClick={(event) => { event.stopPropagation(); setAssignOrder(order); }}>派发</button> : null}
@@ -887,7 +887,7 @@ function AssignDialog({
   onClose: () => void;
   onConfirm: (staff: StaffMember) => void;
 }) {
-  const matchedStaff = staffMembers.filter((staff) => !order.required_category || staff.personnel_category === order.required_category);
+  const matchedStaff = staffMembers;
   const defaultStaff = matchedStaff.find((staff) => staff.status === "idle") ?? matchedStaff[0] ?? null;
   const [staffId, setStaffId] = useState(defaultStaff?.id ?? "");
   const selectedStaff = matchedStaff.find((staff) => staff.id === staffId) ?? null;
@@ -897,14 +897,14 @@ function AssignDialog({
       <div className="assign-dialog" onClick={(event) => event.stopPropagation()}>
         <h2>派发工单</h2>
         <p>{order.work_order_id} · {order.accident_info}</p>
-        <p className="assignment-requirement">要求人员类别：<b>{categoryName(order.required_category)}</b></p>
+        <p className="assignment-requirement">建议人员类别：<b>{categoryName(order.required_category)}</b></p>
         <label>
           选择处理人员
           <select value={staffId} onChange={(event) => setStaffId(event.target.value)}>
             {matchedStaff.map((staff) => <option key={staff.id} value={staff.id}>{staff.name} · {staff.role} · {staff.status === "idle" ? "空闲" : "忙碌"}</option>)}
           </select>
         </label>
-        {matchedStaff.length === 0 ? <p className="assignment-warning">当前没有注册为“{categoryName(order.required_category)}”的人员，无法派发。</p> : null}
+        {matchedStaff.length === 0 ? <p className="assignment-warning">暂无可用人员</p> : null}
         <div className="dialog-actions">
           <button disabled={!selectedStaff} onClick={() => selectedStaff && onConfirm(selectedStaff)}>确认派发</button>
           <button onClick={onClose}>取消</button>
