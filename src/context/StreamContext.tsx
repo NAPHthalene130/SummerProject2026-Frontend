@@ -4,6 +4,7 @@ interface BoxData {
   track_id: number;
   class_name: string;
   bbox: number[];
+  speed?: number;
 }
 
 interface TrafficFlow {

@@ -429,7 +429,7 @@ function WebRTCTile({
 
   // 前端 canvas 异步画检测框（与视频播放解耦，按 SSE 频率更新）
   // 用 requestAnimationFrame 持续同步：每次浏览器重绘时，用最新的 boxes 数据画框
-  // 这样 canvas 尺寸始终匹配 video 实际尺寸，且检测框持续显示
+  // 关键：计算 object-fit: cover 的缩放和偏移，确保 canvas 坐标与 video 显示内容对齐
   const boxesRef = useRef(boxes);
   boxesRef.current = boxes;
 
@@ -439,26 +439,54 @@ function WebRTCTile({
       const canvas = canvasRef.current;
       const video = videoRef.current;
       if (canvas && video && video.videoWidth > 0) {
-        // canvas 内部尺寸匹配 video 原始尺寸（bbox 坐标基于此）
-        const w = video.videoWidth;
-        const h = video.videoHeight;
-        if (canvas.width !== w) canvas.width = w;
-        if (canvas.height !== h) canvas.height = h;
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+        const cw = canvas.clientWidth;
+        const ch = canvas.clientHeight;
+
+        // canvas 内部尺寸 = 容器显示尺寸（非视频原始尺寸）
+        if (canvas.width !== cw) canvas.width = cw;
+        if (canvas.height !== ch) canvas.height = ch;
+
+        // 计算 object-fit: cover 的缩放和偏移
+        const videoRatio = vw / vh;
+        const containerRatio = cw / ch;
+        let scale: number, offsetX: number, offsetY: number;
+        if (videoRatio > containerRatio) {
+          scale = ch / vh;
+          offsetX = (cw - vw * scale) / 2;
+          offsetY = 0;
+        } else {
+          scale = cw / vw;
+          offsetX = 0;
+          offsetY = (ch - vh * scale) / 2;
+        }
 
         const ctx = canvas.getContext("2d");
         if (ctx) {
-          ctx.clearRect(0, 0, w, h);
+          ctx.clearRect(0, 0, cw, ch);
           const currentBoxes = boxesRef.current;
           for (const box of currentBoxes) {
             const [x1, y1, x2, y2] = box.bbox;
+            // 原始坐标 → 显示坐标（cover 缩放 + 偏移）
+            const dx1 = x1 * scale + offsetX;
+            const dy1 = y1 * scale + offsetY;
+            const dx2 = x2 * scale + offsetX;
+            const dy2 = y2 * scale + offsetY;
             const tid = box.track_id;
             const color = DETECTION_COLORS[tid % DETECTION_COLORS.length];
             ctx.strokeStyle = color;
             ctx.lineWidth = 2;
-            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+            ctx.strokeRect(dx1, dy1, dx2 - dx1, dy2 - dy1);
+            // 标签背景 + 文字（清晰可读）
+            const speedText = box.speed != null ? ` ${Math.round(box.speed)}km/h` : "";
+            const label = `${box.class_name}#${tid}${speedText}`;
+            ctx.font = "bold 13px monospace";
+            const textW = ctx.measureText(label).width;
+            ctx.fillStyle = "rgba(0,0,0,0.6)";
+            ctx.fillRect(dx1, Math.max(dy1 - 18, 0), textW + 6, 16);
             ctx.fillStyle = color;
-            ctx.font = "14px monospace";
-            ctx.fillText(`${box.class_name} #${tid}`, x1, Math.max(y1 - 4, 12));
+            ctx.fillText(label, dx1 + 3, Math.max(dy1 - 5, 11));
           }
         }
       }
