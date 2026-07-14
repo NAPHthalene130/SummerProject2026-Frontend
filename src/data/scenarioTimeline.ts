@@ -1,5 +1,7 @@
-import type { RoadSegment, RoadStatus } from "./standardRoadNetwork";
+import type { RoadSegment } from "./standardRoadNetwork";
 import type { TrafficEvent, WorkOrder } from "../types/business";
+
+export type RoadStatus = "normal" | "busy" | "risk" | "danger";
 
 export interface RoadSegmentUpdate {
   segment_id: string;
@@ -17,24 +19,26 @@ export interface ScenarioStep {
   workOrders?: WorkOrder[];
 }
 
+// 【修改点1】：把事故挪到真实的“北四环西路 (海淀桥-中关村一桥)”
 const accidentEvent: TrafficEvent = {
   event_id: "evt_001",
-  segment_id: "seg_gaoxin_1",
-  segment_name: "高新一路事故高发段",
+  segment_id: "S-09-10", 
+  segment_name: "北四环西路 (海淀桥段)",
   event_type: "accident",
   severity: "high",
-  description: "系统检测到高新一路车辆轨迹异常、平均车速骤降，疑似发生追尾事故。",
+  description: "北四环西路车辆轨迹异常、平均车速骤降，疑似发生追尾事故。",
   detected_by: "YOLO",
   timestamp_sec: 15,
 };
 
+// 【修改点2】：把风险事件挪到真实的“中关村大街”
 const coreRiskEvent: TrafficEvent = {
   event_id: "evt_002",
-  segment_id: "seg_tech_e",
-  segment_name: "科技大道核心路口东段",
+  segment_id: "S-02-06",
+  segment_name: "中关村大街 (黄庄段)",
   event_type: "congestion",
   severity: "medium",
-  description: "核心路口平均车速下降，科技大道东段进入高风险观察状态。",
+  description: "中关村大街平均车速下降，进入高风险观察状态。",
   detected_by: "MultimodalAgent",
   timestamp_sec: 10,
 };
@@ -42,84 +46,60 @@ const coreRiskEvent: TrafficEvent = {
 const workOrder: WorkOrder = {
   work_order_id: "wo_001",
   event_id: "evt_001",
-  title: "高新一路事故高发段异常事件处置工单",
+  title: "北四环西路追尾事故处置",
   status: "pending",
   priority: "high",
-  assignee: "待派发",
+  assignee: "",
   created_at_sec: 15,
 };
 
+// 【修改点3】：时间轴更新对应的路段ID
 export const scenarioTimeline: ScenarioStep[] = [
   {
     time_sec: 0,
-    description: "所有道路进入监控态势，科技大道车流略高。",
-    updates: [
-      { segment_id: "seg_tech_w", status: "normal", traffic_flow: 68, avg_speed: 52, risk_score: 0.3 },
-      { segment_id: "seg_tech_e", status: "normal", traffic_flow: 70, avg_speed: 50, risk_score: 0.34 },
-    ],
+    description: "系统初始化，海淀区路网态势平稳",
+    updates: [],
   },
   {
     time_sec: 5,
-    description: "学院路早高峰车流升高，园区入口进入忙碌状态。",
+    description: "中关村区域开始拥堵，风险上升",
     updates: [
-      { segment_id: "seg_academy_w", status: "busy", traffic_flow: 78, avg_speed: 28, risk_score: 0.48 },
-      { segment_id: "seg_academy_e", status: "busy", traffic_flow: 72, avg_speed: 30, risk_score: 0.45 },
+      { segment_id: "S-09-10", status: "busy", traffic_flow: 380, avg_speed: 35, risk_score: 45 },
+      { segment_id: "S-02-06", status: "busy", traffic_flow: 395, avg_speed: 32, risk_score: 52 },
     ],
   },
   {
     time_sec: 10,
-    description: "科技大道核心路口平均车速下降，触发风险研判。",
+    description: "AI 识别到多模态风险事件",
     updates: [
-      { segment_id: "seg_tech_e", status: "risk", traffic_flow: 94, avg_speed: 18, risk_score: 0.72 },
-      { segment_id: "seg_cloud_n", status: "busy", traffic_flow: 76, avg_speed: 32, risk_score: 0.5 },
+      { segment_id: "S-09-10", status: "risk", traffic_flow: 420, avg_speed: 25, risk_score: 75 },
+      { segment_id: "S-02-06", status: "risk", traffic_flow: 440, avg_speed: 20, risk_score: 82 },
     ],
     events: [coreRiskEvent],
-  },
-  {
-    time_sec: 15,
-    description: "高新一路发生疑似追尾事故，系统生成异常事件与工单。",
-    updates: [
-      { segment_id: "seg_gaoxin_1", status: "danger", traffic_flow: 112, avg_speed: 7, risk_score: 0.96 },
-    ],
-    events: [accidentEvent],
     workOrders: [workOrder],
   },
   {
-    time_sec: 20,
-    description: "事故持续，创新路与智能北街出现连带拥堵。",
+    time_sec: 15,
+    description: "发生严重交通事故！已自动派发工单",
     updates: [
-      { segment_id: "seg_innov_e", status: "busy", traffic_flow: 88, avg_speed: 24, risk_score: 0.58 },
-      { segment_id: "seg_smart_s", status: "busy", traffic_flow: 64, avg_speed: 26, risk_score: 0.52 },
+      { segment_id: "S-09-10", status: "danger", traffic_flow: 600, avg_speed: 5, risk_score: 98 },
+    ],
+    events: [accidentEvent],
+    workOrders: [{ ...workOrder, status: "processing" }],
+  },
+  {
+    time_sec: 20,
+    description: "路政巡检组抵达现场处置中",
+    updates: [
+      { segment_id: "S-09-10", status: "risk", traffic_flow: 250, avg_speed: 15, risk_score: 65 },
     ],
   },
   {
     time_sec: 25,
-    description: "道路管理员接单，处置工单转为处理中。",
+    description: "事故处置完毕，交通开始恢复",
     updates: [
-      { segment_id: "seg_gaoxin_1", status: "danger", traffic_flow: 98, avg_speed: 10, risk_score: 0.9 },
-    ],
-    workOrders: [{ ...workOrder, status: "processing", assignee: "路政巡检一组" }],
-  },
-  {
-    time_sec: 30,
-    description: "事故初步处理完成，高新一路从严重异常降为高风险。",
-    updates: [
-      { segment_id: "seg_gaoxin_1", status: "risk", traffic_flow: 70, avg_speed: 24, risk_score: 0.66 },
-      { segment_id: "seg_innov_e", status: "busy", traffic_flow: 76, avg_speed: 29, risk_score: 0.5 },
-    ],
-    workOrders: [{ ...workOrder, status: "processing", assignee: "路政巡检一组" }],
-  },
-  {
-    time_sec: 35,
-    description: "道路逐步恢复，事故工单完成归档。",
-    updates: [
-      { segment_id: "seg_gaoxin_1", status: "normal", traffic_flow: 46, avg_speed: 42, risk_score: 0.38 },
-      { segment_id: "seg_tech_e", status: "normal", traffic_flow: 68, avg_speed: 48, risk_score: 0.34 },
-      { segment_id: "seg_academy_w", status: "normal", traffic_flow: 44, avg_speed: 38, risk_score: 0.28 },
-      { segment_id: "seg_academy_e", status: "normal", traffic_flow: 40, avg_speed: 40, risk_score: 0.25 },
-      { segment_id: "seg_innov_e", status: "normal", traffic_flow: 52, avg_speed: 42, risk_score: 0.38 },
-      { segment_id: "seg_smart_s", status: "normal", traffic_flow: 28, avg_speed: 33, risk_score: 0.23 },
-      { segment_id: "seg_cloud_n", status: "normal", traffic_flow: 54, avg_speed: 51, risk_score: 0.31 },
+      { segment_id: "S-09-10", status: "normal", traffic_flow: 80, avg_speed: 40, risk_score: 25 },
+      { segment_id: "S-02-06", status: "normal", traffic_flow: 90, avg_speed: 45, risk_score: 20 },
     ],
     workOrders: [{ ...workOrder, status: "completed", assignee: "路政巡检一组" }],
   },

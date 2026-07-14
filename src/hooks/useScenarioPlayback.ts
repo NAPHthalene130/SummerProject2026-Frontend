@@ -5,11 +5,12 @@ import {
   getScenarioWorkOrders,
   scenarioTimeline,
 } from "../data/scenarioTimeline";
+// 【修改点1】：导入新生成的海淀区数据
 import {
-  standardCameraPoints,
-  standardRoadNodes,
-  standardRoadSegments,
-} from "../data/standardRoadNetwork";
+  haidianCameras,
+  haidianNodes,
+  haidianSegments,
+} from "../data/haidianRoadNetwork";
 
 export function useScenarioPlayback() {
   const [stepIndex, setStepIndex] = useState(0);
@@ -35,9 +36,10 @@ export function useScenarioPlayback() {
       currentStepIndex: stepIndex,
       currentTimeSec: current.time_sec,
       currentDescription: current.description,
-      nodes: standardRoadNodes,
-      segments: applyScenarioSteps(standardRoadSegments, stepIndex),
-      cameras: standardCameraPoints,
+      // 【修改点2】：将状态替换为海淀区数据
+      nodes: haidianNodes,
+      segments: applyScenarioSteps(haidianSegments, stepIndex),
+      cameras: haidianCameras,
       events: getScenarioEvents(stepIndex),
       workOrders: getScenarioWorkOrders(stepIndex),
     };

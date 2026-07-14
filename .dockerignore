@@ -1,0 +1,11 @@
+.git
+.github
+.agents
+node_modules
+dist
+.vite
+*.log
+*.tsbuildinfo
+.env
+.env.*
+docs

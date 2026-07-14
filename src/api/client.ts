@@ -1,0 +1,342 @@
+import type { StaffMember } from "../data/mockStaff";
+import type { WorkOrderItem } from "../data/mockWorkOrders";
+
+export interface BackendCamera {
+  id: string;
+  name: string;
+  longitude: number;
+  latitude: number;
+}
+
+export interface LiveOfferRequest {
+  sdp: string;
+  type: string;
+}
+
+export interface LiveOfferResponse {
+  sdp: string;
+  type: string;
+}
+
+export interface CameraStatsItem {
+  camera_id: string;
+  total_vehicle_count: number;
+}
+
+export interface CameraStatsResponse {
+  cameras: CameraStatsItem[];
+}
+
+export interface RiskDetail {
+  risk_score: number;
+  vehicle_count: number;
+  max_vehicle_risk: number;
+  min_vehicle_risk: number;
+}
+
+export interface RisksResponse {
+  camera_risks: Record<string, number>;
+  detailed: Record<string, RiskDetail>;
+}
+
+export interface RoadRiskPredictionInput {
+  segment_id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  road_type: string;
+  lane_count: number;
+  speed_limit: number;
+  camera_ids: string[];
+  traffic_flow: number;
+  avg_speed: number;
+}
+
+export interface RoadRiskPrediction {
+  segment_id: string;
+  risk_score: number;
+  risk_level: "normal" | "busy" | "risk" | "danger";
+  reason: string[];
+  vehicle: {
+    camera_ids: string[];
+    vehicle_count: number;
+    avg_speed_kmh: number | null;
+    active_incidents: number;
+    source: string;
+  };
+  road: {
+    name: string;
+    display_name: string;
+    road_type: string;
+    district: string;
+    maxspeed: string | number | null;
+    lanes: string | number | null;
+    surface: string | null;
+    source: string;
+    fallback: boolean;
+  };
+}
+
+export interface RoadRiskPredictionResponse {
+  generated_at: string;
+  model: string;
+  forecast_minutes: number;
+  weather: {
+    temperature_2m: number;
+    relative_humidity_2m: number;
+    precipitation: number;
+    rain: number;
+    snowfall: number;
+    wind_speed_10m: number;
+    weather_code: number;
+    source: string;
+    fallback: boolean;
+  };
+  predictions: RoadRiskPrediction[];
+}
+
+export interface UserItem {
+  user_id: number;
+  user_name: string;
+  user_type: string;
+}
+
+export interface UserWritePayload {
+  user_name: string;
+  user_type: string;
+  password?: string;
+}
+
+export interface UserLoginPayload {
+  user_name: string;
+  password: string;
+}
+
+export interface MobileReport {
+  report_id: number; reporter_user_id: number; reporter_name: string; title: string;
+  location: string; detail: string; severity: "low" | "medium" | "high";
+  event_type: string; image_urls: string[]; status: "pending" | "converted" | "rejected";
+  created_at: string; work_order_id?: string;
+  review_message?: string; reviewed_at?: string;
+}
+
+export interface AgentChatResponse {
+  reply: string;
+  thread_id: string;
+}
+
+class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+async function request<T>(url: string, init?: RequestInit, timeoutMs = 12_000): Promise<T> {
+  const timeoutController = init?.signal ? null : new AbortController();
+  const timeoutId = timeoutController
+    ? window.setTimeout(() => timeoutController.abort(), timeoutMs)
+    : null;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      signal: init?.signal ?? timeoutController?.signal,
+    });
+  } catch (error) {
+    if (timeoutController?.signal.aborted) {
+      throw new ApiError(408, "请求超时，请检查后端服务与数据库连接");
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    let message = text;
+    try {
+      const payload = JSON.parse(text) as { detail?: string };
+      message = payload.detail ?? text;
+    } catch {
+      // Keep non-JSON error responses unchanged.
+    }
+    throw new ApiError(response.status, message || `HTTP ${response.status}`);
+  }
+  if (response.status === 204) return undefined as T;
+  return response.json() as Promise<T>;
+}
+
+export function fetchCameras(): Promise<BackendCamera[]> {
+  return request<BackendCamera[]>("/api/v1/cameras/");
+}
+
+export function fetchCameraStats(): Promise<CameraStatsResponse> {
+  return request<CameraStatsResponse>("/api/v1/cameras/stats");
+}
+
+export function fetchRisks(): Promise<RisksResponse> {
+  return request<RisksResponse>("/api/v1/risks/");
+}
+
+export function fetchRoadRiskPredictions(
+  segments: RoadRiskPredictionInput[],
+  selectedSegmentId?: string | null,
+): Promise<RoadRiskPredictionResponse> {
+  return request<RoadRiskPredictionResponse>("/api/v1/risks/prediction", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ segments, selected_segment_id: selectedSegmentId ?? null }),
+  }, 30_000);
+}
+
+export function postLiveOffer(cameraId: string, body: LiveOfferRequest): Promise<LiveOfferResponse> {
+  return request<LiveOfferResponse>(`/api/v1/live/${cameraId}/offer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function fetchWorkOrders(): Promise<WorkOrderItem[]> {
+  return request<WorkOrderItem[]>("/api/v1/work-orders/");
+}
+
+export function fetchStaff(): Promise<StaffMember[]> {
+  return request<StaffMember[]>("/api/v1/staff/");
+}
+
+export function chatWithAgent(message: string, threadId?: string): Promise<AgentChatResponse> {
+  return request<AgentChatResponse>("/api/v1/agent/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, thread_id: threadId ?? null }),
+  }, 60_000);
+}
+
+export function fetchMobileReports(): Promise<MobileReport[]> {
+  return request<MobileReport[]>("/api/v1/mobile-reports?status=pending");
+}
+
+export function convertMobileReport(reportId: number, requiredCategory: string): Promise<MobileReport> {
+  return request<MobileReport>(`/api/v1/mobile-reports/${reportId}/convert`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ required_category: requiredCategory }),
+  });
+}
+
+export function rejectMobileReport(reportId: number, reviewMessage: string): Promise<MobileReport> {
+  return request<MobileReport>(`/api/v1/mobile-reports/${reportId}/reject`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ review_message: reviewMessage }),
+  });
+}
+
+export function reviewWorkOrderFeedback(
+  workOrderId: string,
+  decision: "approve" | "reject",
+  reviewMessage?: string,
+): Promise<WorkOrderItem> {
+  return request<WorkOrderItem>(`/api/v1/work-orders/${encodeURIComponent(workOrderId)}/feedback-review`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision, review_message: reviewMessage }),
+  });
+}
+
+export function dispatchWorkOrder(workOrderId: string, userId: string): Promise<WorkOrderItem> {
+  return request<WorkOrderItem>(`/api/v1/work-orders/${encodeURIComponent(workOrderId)}/dispatch`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: Number(userId) }),
+  });
+}
+
+export function updateWorkOrderStatus(
+  workOrderId: string,
+  body: {
+    status: WorkOrderItem["status"];
+    process_message?: string;
+    process_image_url?: string;
+  },
+): Promise<WorkOrderItem> {
+  return request<WorkOrderItem>(`/api/v1/work-orders/${encodeURIComponent(workOrderId)}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function fetchUsers(): Promise<UserItem[]> {
+  return request<UserItem[]>("/api/v1/users/");
+}
+
+export interface MobileUserItem {
+  user_id: number;
+  name: string;
+  phone: string;
+  personnel_category: string;
+  role_name: string;
+  site: string;
+}
+
+export interface MobileUserWritePayload {
+  name: string;
+  phone: string;
+  personnel_category: string;
+  site: string;
+  password?: string;
+}
+
+export function loginUser(body: UserLoginPayload): Promise<UserItem> {
+  return request<UserItem>("/api/v1/users/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function createUser(body: UserWritePayload): Promise<UserItem> {
+  return request<UserItem>("/api/v1/users/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateUser(userId: number, body: UserWritePayload): Promise<UserItem> {
+  return request<UserItem>(`/api/v1/users/${userId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteUser(userId: number): Promise<void> {
+  return request<void>(`/api/v1/users/${userId}`, { method: "DELETE" });
+}
+
+export function fetchMobileUsers(): Promise<MobileUserItem[]> {
+  return request<MobileUserItem[]>("/api/v1/mobile-users");
+}
+
+export function createMobileUser(body: MobileUserWritePayload & { password: string }): Promise<MobileUserItem> {
+  return request<MobileUserItem>("/api/v1/mobile-users/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateMobileUser(userId: number, body: MobileUserWritePayload): Promise<MobileUserItem> {
+  return request<MobileUserItem>(`/api/v1/mobile-users/${userId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteMobileUser(userId: number): Promise<void> {
+  return request<void>(`/api/v1/mobile-users/${userId}`, { method: "DELETE" });
+}
