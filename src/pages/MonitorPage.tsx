@@ -428,31 +428,45 @@ function WebRTCTile({
   }, [stream]);
 
   // 前端 canvas 异步画检测框（与视频播放解耦，按 SSE 频率更新）
+  // 用 requestAnimationFrame 持续同步：每次浏览器重绘时，用最新的 boxes 数据画框
+  // 这样 canvas 尺寸始终匹配 video 实际尺寸，且检测框持续显示
+  const boxesRef = useRef(boxes);
+  boxesRef.current = boxes;
+
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const video = videoRef.current;
-    if (!canvas || !video) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    let raf = 0;
+    const draw = () => {
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
+      if (canvas && video && video.videoWidth > 0) {
+        // canvas 内部尺寸匹配 video 原始尺寸（bbox 坐标基于此）
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        if (canvas.width !== w) canvas.width = w;
+        if (canvas.height !== h) canvas.height = h;
 
-    const w = video.videoWidth || 640;
-    const h = video.videoHeight || 480;
-    if (canvas.width !== w) canvas.width = w;
-    if (canvas.height !== h) canvas.height = h;
-
-    ctx.clearRect(0, 0, w, h);
-    for (const box of boxes) {
-      const [x1, y1, x2, y2] = box.bbox;
-      const tid = box.track_id;
-      const color = DETECTION_COLORS[tid % DETECTION_COLORS.length];
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-      ctx.fillStyle = color;
-      ctx.font = "12px monospace";
-      ctx.fillText(`${box.class_name} #${tid}`, x1, Math.max(y1 - 4, 10));
-    }
-  }, [boxes]);
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.clearRect(0, 0, w, h);
+          const currentBoxes = boxesRef.current;
+          for (const box of currentBoxes) {
+            const [x1, y1, x2, y2] = box.bbox;
+            const tid = box.track_id;
+            const color = DETECTION_COLORS[tid % DETECTION_COLORS.length];
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+            ctx.fillStyle = color;
+            ctx.font = "14px monospace";
+            ctx.fillText(`${box.class_name} #${tid}`, x1, Math.max(y1 - 4, 12));
+          }
+        }
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   const hasSegment = view.segment !== null;
   const statusText = hasSegment ? getRiskText(view.segment!.status) : "在线";
