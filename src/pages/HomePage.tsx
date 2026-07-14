@@ -248,7 +248,7 @@ export function HomePage() {
           segment={selectedSegment}
           mode={mode}
           cameras={cameras}
-          cameraRisks={rawCameraRisks}
+          cameraRisks={cameraRisks}
           prediction={selectedPrediction}
           predictionData={predictionData}
           predictionLoading={predictionLoading}
@@ -659,8 +659,8 @@ function CameraLayer({
           className: "",
           html: `<div style="
             width:18px;height:18px;
-            background:#e74c3c;
-            border:2px solid #c0392b;
+            background:#26c6ff;
+            border:2px solid #0097d4;
             border-radius:50% 50% 50% 0;
             transform:rotate(-45deg);
             box-shadow:1px 1px 3px rgba(0,0,0,0.5);
@@ -729,10 +729,10 @@ function MapLegend({ mode }: { mode: MapMode }) {
         ["#e74c3c", "事故/严重异常"],
       ]
       : [
-        ["#2ecc71", "0-30 车流较小"],
-        ["#f1c40f", "31-60 车流中等"],
-        ["#e67e22", "61-90 车流较大"],
-        ["#e74c3c", "90+ 严重拥堵"],
+        ["#34A853", "1-200 车流较小"],
+        ["#FBBC04", "201-400 车流中等"],
+        ["#FF6D01", "401-600 车流较大"],
+        ["#EA4335", "600+ 严重拥堵"],
       ];
 
   return (

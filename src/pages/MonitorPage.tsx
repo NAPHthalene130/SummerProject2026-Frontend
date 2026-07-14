@@ -833,11 +833,16 @@ function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 3000) {
   });
 }
 
+const MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 2000;
+
 function useWebRTC(cameraId: string) {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const retryCountRef = useRef(0);
+  const mountedRef = useRef(true);
 
   const closeCurrentPeer = useCallback(() => {
     const pc = pcRef.current;
@@ -862,6 +867,7 @@ function useWebRTC(cameraId: string) {
 
     pc.ontrack = (event) => {
       if (pcRef.current !== pc) return;
+      retryCountRef.current = 0;
       setStream(event.streams[0] ?? new MediaStream([event.track]));
       setConnecting(false);
     };
@@ -898,26 +904,46 @@ function useWebRTC(cameraId: string) {
       }
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer as RTCSessionDescriptionInit));
-      if (pcRef.current === pc) setConnecting(false);
-    } catch (err: unknown) {
       if (pcRef.current === pc) {
-        pcRef.current = null;
-        pc.ontrack = null;
-        pc.onconnectionstatechange = null;
+        setError(null);
+        setConnecting(false);
+      }
+    } catch (err: unknown) {
+      if (pcRef.current !== pc) return;
+      pcRef.current = null;
+      pc.ontrack = null;
+      pc.onconnectionstatechange = null;
+      if (pc.connectionState !== "closed") pc.close();
+      if (!mountedRef.current) return;
+
+      const retryCount = retryCountRef.current;
+      if (retryCount < MAX_RETRIES) {
+        retryCountRef.current = retryCount + 1;
+        const delay = RETRY_BASE_DELAY_MS * Math.pow(2, retryCount);
+        setConnecting(true);
+        setTimeout(() => {
+          if (mountedRef.current) void connect();
+        }, delay);
+      } else {
         setError(err instanceof Error ? err.message : "WebRTC 连接失败");
         setConnecting(false);
         setStream(null);
       }
-      if (pc.connectionState !== "closed") pc.close();
     }
   }, [cameraId, closeCurrentPeer]);
 
   useEffect(() => {
+    mountedRef.current = true;
+    retryCountRef.current = 0;
     void connect();
-    return closeCurrentPeer;
+    return () => {
+      mountedRef.current = false;
+      closeCurrentPeer();
+    };
   }, [connect, closeCurrentPeer]);
 
   const disconnect = useCallback(() => {
+    mountedRef.current = false;
     closeCurrentPeer();
     setStream(null);
     setConnecting(false);

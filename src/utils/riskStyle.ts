@@ -20,9 +20,9 @@ export function getRiskColor(status: RoadStatus): string {
 }
 
 export function getTrafficFlowColor(flow: number): string {
-  if (flow <= 30) return "#34A853";
-  if (flow <= 60) return "#FBBC04";
-  if (flow <= 90) return "#FF6D01";
+  if (flow <= 200) return "#34A853";
+  if (flow <= 400) return "#FBBC04";
+  if (flow <= 600) return "#FF6D01";
   return "#EA4335";
 }
 
