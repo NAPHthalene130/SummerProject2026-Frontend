@@ -81,7 +81,7 @@ export function HomePage() {
   const nodes = !demoDataEnabled ? scenario.nodes : [];
   const rawSegments = !demoDataEnabled ? scenario.segments : [];
   const segments = useMemo(() => rawSegments.map(seg => {
-    const camIds = (seg.camera_ids || []).map(c => c.replace(/_/g, "-").replace(/^cam-0?(\d+)$/, "cam-$1"));
+    const camIds = (seg.camera_ids || []).map(normalizeCameraId);
     const segData = camIds.map(id => roadTraffic[id] || {}).filter((t: any) => t.total_vehicle_count !== undefined);
     if (segData.length === 0) return seg;
     return {
@@ -424,6 +424,13 @@ function getDynamicRoadCondition(prediction: RoadRiskPrediction | null, segment:
 function normalizeCamId(id: string): string {
   const m = id.match(/^cam[-_](\d+)$/i);
   return m ? `C${String(Number(m[1])).padStart(2, "0")}` : id;
+}
+
+// 统一为后端 cam-NN 两位数字格式（用于匹配 /roads/traffic 返回的 key）。
+// 支持 C25 / C05 / cam_001 / cam001 / cam-001 / cam-01 / cam-1 / cam25 等所有变体。
+function normalizeCameraId(id: string): string {
+  const m = id.replace(/_/g, "-").match(/^(?:C|cam-?)0*(\d+)$/i);
+  return m ? `cam-${String(Number(m[1])).padStart(2, "0")}` : id;
 }
 
 function segAvgRisk(seg: RoadSegment, cameraRisks: Record<string, number>): number {
@@ -772,14 +779,13 @@ function SelectedRoadPopup({
   recentEvent: string;
   onClose: () => void;
 }) {
-  const nid = (id: string) => { const m = id.match(/^cam[-_](\d+)$/i); return m ? `C${String(Number(m[1])).padStart(2, "0")}` : id; };
-  const camIds = segment.camera_ids.map(c => c.replace(/_/g, "-").replace(/^cam-0?(\d+)$/, "cam-$1"));
+  const camIds = segment.camera_ids.map(normalizeCameraId);
   const segTraffic = camIds.map(id => roadTraffic[id] || {}).filter((t: any) => t.total_vehicle_count !== undefined);
   const realFlow = segTraffic.length > 0 ? Math.round(segTraffic.reduce((s: number, t: any) => s + (t.flow_per_min || 0), 0)) : segment.traffic_flow;
   const realSpeed = segTraffic.length > 0 ? Math.round(segTraffic.reduce((s: number, t: any) => s + (t.avg_speed || 0), 0) / segTraffic.length) : segment.avg_speed;
   const segCameras = cameras.filter((c) => segment.camera_ids.includes(c.camera_id));
   const cameraRiskDetails = segCameras.flatMap((camera) => {
-    const risk = cameraRisks[nid(camera.camera_id)] ?? cameraRisks[camera.camera_id];
+    const risk = cameraRisks[normalizeCamId(camera.camera_id)] ?? cameraRisks[camera.camera_id];
     return risk === undefined ? [] : [{ camera, risk }];
   });
   const lstmRisk = cameraRiskDetails.length > 0
