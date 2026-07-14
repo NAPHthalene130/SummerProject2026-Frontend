@@ -9,10 +9,14 @@ import { roadNetworkToGeoJSON } from "../utils/roadNetworkToGeoJSON";
 import {
   fetchRisks,
   fetchRoadRiskPredictions,
+  fetchUnprocessedWorkOrders,
+  fetchWorkOrderDetail,
   type RoadRiskPrediction,
   type RoadRiskPredictionInput,
   type RoadRiskPredictionResponse,
+  type CameraUnprocessedEvents,
 } from "../api/client";
+import type { WorkOrderItem } from "../data/mockWorkOrders";
 import {
   getRiskColor,
   getRiskText,
@@ -77,6 +81,19 @@ export function HomePage() {
   const [predictionError, setPredictionError] = useState<string | null>(null);
   const [roadTraffic, setRoadTraffic] = useState<Record<string, {total_vehicle_count: number; avg_speed: number; entry_count: number; exit_count: number; flow_per_min: number}>>({});
   const selectedSegmentIdRef = useRef<string | null>(null);
+
+  const [cameraWorkOrders, setCameraWorkOrders] = useState<CameraUnprocessedEvents[]>([]);
+  const [newEventCameras, setNewEventCameras] = useState<Set<string>>(new Set());
+  const [selectedPopupCamera, setSelectedPopupCamera] = useState<string | null>(null);
+  const [selectedPopupEvent, setSelectedPopupEvent] = useState<WorkOrderItem | null>(null);
+  const [eventDetailLoading, setEventDetailLoading] = useState(false);
+  const newEventTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const prevWorkOrderIdsRef = useRef<Set<string>>(new Set());
+
+  const toCanonicalCameraId = useCallback((id: string): string => {
+    const m = id.replace(/_/g, "-").match(/(?:C|cam-?)0*(\d+)$/i);
+    return m ? `C${String(Number(m[1])).padStart(2, "0")}` : id;
+  }, []);
 
   const nodes = !demoDataEnabled ? scenario.nodes : [];
   const rawSegments = !demoDataEnabled ? scenario.segments : [];
@@ -202,6 +219,66 @@ export function HomePage() {
     return () => { cancelled = true; };
   }, [demoDataEnabled]);
 
+  useEffect(() => {
+    if (demoDataEnabled) return;
+    let cancelled = false;
+    const poll = () => {
+      if (cancelled) return;
+      fetchUnprocessedWorkOrders()
+        .then((data) => {
+          if (cancelled) return;
+          setCameraWorkOrders(data.cameras);
+          const currentIds = new Set<string>();
+          for (const cam of data.cameras) {
+            for (const e of cam.events) {
+              currentIds.add(e.work_order_id);
+            }
+          }
+          const prevIds = prevWorkOrderIdsRef.current;
+          const newIds = new Set([...currentIds].filter((id) => !prevIds.has(id)));
+          prevWorkOrderIdsRef.current = currentIds;
+          if (newIds.size === 0) return;
+          const triggeredCameras = new Set<string>();
+          for (const cam of data.cameras) {
+            for (const e of cam.events) {
+              if (newIds.has(e.work_order_id)) {
+                triggeredCameras.add(cam.camera_id);
+              }
+            }
+          }
+          setNewEventCameras((prev) => {
+            const next = new Set(prev);
+            for (const cid of triggeredCameras) next.add(toCanonicalCameraId(cid));
+            return next;
+          });
+          for (const cid of triggeredCameras) {
+            const normalized = toCanonicalCameraId(cid);
+            const existing = newEventTimersRef.current.get(normalized);
+            if (existing) clearTimeout(existing);
+            const timer = setTimeout(() => {
+              setNewEventCameras((prev) => {
+                const next = new Set(prev);
+                next.delete(normalized);
+                return next;
+              });
+              newEventTimersRef.current.delete(normalized);
+            }, 30_000);
+            newEventTimersRef.current.set(normalized, timer);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) window.setTimeout(poll, POLL_INTERVAL_MS);
+        });
+    };
+    poll();
+    return () => {
+      cancelled = true;
+      for (const t of newEventTimersRef.current.values()) clearTimeout(t);
+      newEventTimersRef.current.clear();
+    };
+  }, [demoDataEnabled]);
+
   return (
     <section className="home-command-page">
       <RoadMapView
@@ -215,6 +292,8 @@ export function HomePage() {
         selectedSegmentId={selectedSegmentId}
         onSelectSegment={setSelectedSegmentId}
         onBlankClick={onBlankClick}
+        newEventCameras={newEventCameras}
+        onCameraClick={(cid) => setSelectedPopupCamera(cid)}
       />
 
       <button
@@ -256,6 +335,37 @@ export function HomePage() {
           roadTraffic={roadTraffic}
           recentEvent={events.find((event) => event.segment_id === selectedSegment.segment_id)?.description ?? "暂无"}
           onClose={() => setSelectedSegmentId(null)}
+        />
+      ) : null}
+
+      {selectedPopupCamera ? (
+        <CameraEventListPopup
+          cameraWorkOrders={cameraWorkOrders}
+          cameraId={selectedPopupCamera}
+          onClose={() => setSelectedPopupCamera(null)}
+          onSelectEvent={async (workOrderId) => {
+            setEventDetailLoading(true);
+            try {
+              const detail = await fetchWorkOrderDetail(workOrderId);
+              setSelectedPopupEvent(detail);
+            } catch {
+              setSelectedPopupEvent(null);
+            } finally {
+              setEventDetailLoading(false);
+            }
+          }}
+        />
+      ) : null}
+
+      {selectedPopupEvent ? (
+        <EventDetailPopup
+          event={selectedPopupEvent}
+          loading={eventDetailLoading}
+          onClose={() => setSelectedPopupEvent(null)}
+          onHandle={() => {
+            sessionStorage.setItem("selectedWorkOrderId", selectedPopupEvent.work_order_id);
+            window.location.hash = "workOrder";
+          }}
         />
       ) : null}
     </section>
@@ -452,6 +562,8 @@ function RoadMapView({
   selectedSegmentId,
   onSelectSegment,
   onBlankClick,
+  newEventCameras,
+  onCameraClick,
 }: {
   mode: MapMode;
   nodes: RoadNode[];
@@ -463,6 +575,8 @@ function RoadMapView({
   selectedSegmentId: string | null;
   onSelectSegment: (segmentId: string) => void;
   onBlankClick: () => void;
+  newEventCameras: Set<string>;
+  onCameraClick: (cameraId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -519,7 +633,7 @@ function RoadMapView({
         selectedSegmentId={selectedSegmentId}
         onSelectSegment={onSelectSegment}
       />
-      <CameraLayer map={mapInstance} layerRef={cameraLayerRef} cameras={cameras} />
+      <CameraLayer map={mapInstance} layerRef={cameraLayerRef} cameras={cameras} newEventCameras={newEventCameras} onCameraClick={onCameraClick} />
       <EventLayer map={mapInstance} layerRef={eventLayerRef} nodes={nodes} segments={segments} events={events} />
     </div>
   );
@@ -644,37 +758,47 @@ function CameraLayer({
   map,
   layerRef,
   cameras,
+  newEventCameras,
+  onCameraClick,
 }: {
   map: L.Map | null;
   layerRef: MutableRefObject<L.LayerGroup | null>;
   cameras: CameraPoint[];
+  newEventCameras: Set<string>;
+  onCameraClick: (cameraId: string) => void;
 }) {
   useEffect(() => {
     if (!map) return;
     layerRef.current?.removeFrom(map);
     const group = L.layerGroup();
     cameras.forEach((camera) => {
+      const canonId = (() => {
+        const m = camera.camera_id.replace(/_/g, "-").match(/(?:C|cam-?)0*(\d+)$/i);
+        return m ? `C${String(Number(m[1])).padStart(2, "0")}` : camera.camera_id;
+      })();
+      const hasNew = newEventCameras.has(canonId);
+      const pulseClass = hasNew ? " camera-pulse" : "";
+      const scale = hasNew ? " transform:rotate(-45deg) scale(1.5);" : " transform:rotate(-45deg);";
+      const bg = hasNew ? "#ff4444" : "#26c6ff";
+      const border = hasNew ? "#cc0000" : "#0097d4";
+      const shadow = hasNew
+        ? "box-shadow:0 0 12px rgba(255,68,68,0.7),1px 1px 3px rgba(0,0,0,0.5);"
+        : "box-shadow:1px 1px 3px rgba(0,0,0,0.5);";
       const marker = L.marker([camera.lat, camera.lng], {
         icon: L.divIcon({
-          className: "",
-          html: `<div style="
-            width:18px;height:18px;
-            background:#26c6ff;
-            border:2px solid #0097d4;
-            border-radius:50% 50% 50% 0;
-            transform:rotate(-45deg);
-            box-shadow:1px 1px 3px rgba(0,0,0,0.5);
-          "></div>`,
-          iconSize: [18, 18],
-          iconAnchor: [9, 16],
+          className: pulseClass,
+          html: `<div style="width:18px;height:18px;background:${bg};border:2px solid ${border};border-radius:50% 50% 50% 0;${scale}${shadow}"></div>`,
+          iconSize: hasNew ? [27, 27] : [18, 18],
+          iconAnchor: hasNew ? [13, 20] : [9, 16],
         }),
       });
       marker.bindTooltip(`摄像头：${camera.name}`);
+      marker.on("click", () => onCameraClick(camera.camera_id));
       marker.addTo(group);
     });
     group.addTo(map);
     layerRef.current = group;
-  }, [cameras, layerRef, map]);
+  }, [cameras, layerRef, map, newEventCameras, onCameraClick]);
 
   return null;
 }
@@ -881,6 +1005,133 @@ function SelectedRoadPopup({
       <div className="segment-event-line">
         <em>最近异常</em>
         <p>{recentEvent}</p>
+      </div>
+    </div>
+  );
+}
+
+function CameraEventListPopup({
+  cameraWorkOrders,
+  cameraId,
+  onClose,
+  onSelectEvent,
+}: {
+  cameraWorkOrders: CameraUnprocessedEvents[];
+  cameraId: string;
+  onClose: () => void;
+  onSelectEvent: (workOrderId: string) => void;
+}) {
+  const canonId = (id: string) => {
+    const m = id.replace(/_/g, "-").match(/(?:C|cam-?)0*(\d+)$/i);
+    return m ? `C${String(Number(m[1])).padStart(2, "0")}` : id;
+  };
+  const normalizedCameraId = canonId(cameraId);
+  const camera = cameraWorkOrders.find((c) => canonId(c.camera_id) === normalizedCameraId);
+  const events = camera?.events ?? [];
+  const cameraName = camera?.camera_name ?? "未知摄像头";
+
+  const levelColor = (level: string) => {
+    if (level === "high") return "#e74c3c";
+    if (level === "medium") return "#f1c40f";
+    return "#26c6ff";
+  };
+
+  const statusLabel = (s: string) => {
+    const map: Record<string, string> = {
+      unassigned: "未派发", pending: "待处理", processing: "处理中",
+      completed: "已完成", ignored: "已忽略",
+    };
+    return map[s] ?? s;
+  };
+
+  return (
+    <div className="camera-event-overlay" onClick={onClose}>
+      <div className="camera-event-popup" onClick={(e) => e.stopPropagation()} style={{ position: "relative" }}>
+        <button className="cev-close" onClick={onClose}>&times;</button>
+        <h2>{cameraName}</h2>
+        <div className="cev-subtitle">摄像头ID: {cameraId} · 未处理事件: {events.length} 条</div>
+        {events.length === 0 ? (
+          <p style={{ color: "#8899aa", fontSize: 13 }}>当前无未处理事件</p>
+        ) : (
+          events.map((evt) => (
+            <div
+              key={evt.work_order_id}
+              className="cev-event-item"
+              onClick={() => onSelectEvent(evt.work_order_id)}
+            >
+              <span className="cev-event-level" style={{ background: levelColor(evt.event_level) }} />
+              <div className="cev-event-info">
+                <div className="cev-event-type">{evt.work_order_id}: {evt.accident_info}</div>
+                <div className="cev-event-time">{evt.event_time} · {statusLabel(evt.status)}</div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EventDetailPopup({
+  event,
+  loading,
+  onClose,
+  onHandle,
+}: {
+  event: WorkOrderItem;
+  loading: boolean;
+  onClose: () => void;
+  onHandle: () => void;
+}) {
+  const levelLabel = (level: string) => {
+    if (level === "high") return "紧急";
+    if (level === "medium") return "中等";
+    return "一般";
+  };
+  const levelColor = (level: string) => {
+    if (level === "high") return "#e74c3c";
+    if (level === "medium") return "#f1c40f";
+    return "#26c6ff";
+  };
+
+  if (loading) {
+    return (
+      <div className="camera-event-overlay" onClick={onClose}>
+        <div className="event-detail-popup" onClick={(e) => e.stopPropagation()}>
+          <p style={{ textAlign: "center", color: "#8899aa" }}>正在加载事件详情…</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="camera-event-overlay" onClick={onClose}>
+      <div className="event-detail-popup" onClick={(e) => e.stopPropagation()}>
+        <h2>{event.accident_info}</h2>
+        <div className="edp-grid">
+          <span>工单编号</span><b>{event.work_order_id}</b>
+          <span>事件等级</span><b style={{ color: levelColor(event.event_level) }}>{levelLabel(event.event_level)}</b>
+          <span>工单状态</span><b>{event.status}</b>
+          <span>摄像头</span><b>{event.camera_name}</b>
+          <span>监控地址</span><b>{event.monitor_address}</b>
+          <span>路段</span><b>{event.segment_name}</b>
+          <span>事件时间</span><b>{event.event_time}</b>
+          <span>负责人</span><b>{event.assignee || "未指派"}</b>
+          <span>AI建议</span><b>{event.ai_suggestion || "暂无"}</b>
+          <span>现场描述</span><b>{event.description}</b>
+        </div>
+        {event.scene_images && event.scene_images.length > 0 ? (
+          <div className="edp-images">
+            <em style={{ fontSize: 12, color: "#8899aa" }}>现场图片</em>
+            {event.scene_images.map((url, i) => (
+              <img key={i} src={url} alt={`现场图片 ${i + 1}`} />
+            ))}
+          </div>
+        ) : null}
+        <div className="edp-actions">
+          <button className="edp-close-btn" onClick={onClose}>关闭</button>
+          <button className="edp-handle-btn" onClick={onHandle}>立即处理</button>
+        </div>
       </div>
     </div>
   );

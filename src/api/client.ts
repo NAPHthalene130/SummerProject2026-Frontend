@@ -224,6 +224,24 @@ export function fetchWorkOrders(): Promise<WorkOrderItem[]> {
   return request<WorkOrderItem[]>("/api/v1/work-orders/");
 }
 
+export interface CameraUnprocessedEvents {
+  camera_id: string;
+  camera_name: string;
+  events: WorkOrderItem[];
+}
+
+export interface UnprocessedResponse {
+  cameras: CameraUnprocessedEvents[];
+}
+
+export function fetchUnprocessedWorkOrders(): Promise<UnprocessedResponse> {
+  return request<UnprocessedResponse>("/api/v1/work-orders/unprocessed");
+}
+
+export function fetchWorkOrderDetail(workOrderId: string): Promise<WorkOrderItem> {
+  return request<WorkOrderItem>(`/api/v1/work-orders/detail/${encodeURIComponent(workOrderId)}`);
+}
+
 export function fetchStaff(): Promise<StaffMember[]> {
   return request<StaffMember[]>("/api/v1/staff/");
 }
