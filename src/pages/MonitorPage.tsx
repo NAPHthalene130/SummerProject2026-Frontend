@@ -277,19 +277,12 @@ export function MonitorPage() {
             />
 
             <div className="monitor-wall-grid">
-              {pageItems.map((view) => page === 0 ? (
+              {pageItems.map((view, idx) => (
                 <WebRTCTile
                   key={view.camera.camera_id}
                   view={view}
+                  gridIndex={idx}
                   vehicleCount={vehicleCountMap[view.camera.camera_id] ?? 0}
-                  expandedId={expandedId}
-                  onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
-                  onSelect={setActiveCamera}
-                />
-              ) : (
-                <MonitorTile
-                  key={view.camera.camera_id}
-                  view={view}
                   expandedId={expandedId}
                   onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
                   onSelect={setActiveCamera}
@@ -412,18 +405,21 @@ function MonitorTile({
 
 function WebRTCTile({
   view,
+  gridIndex,
   vehicleCount,
   expandedId,
   onToggleExpand,
   onSelect,
 }: {
   view: CameraView;
+  gridIndex: number;
   vehicleCount: number;
   expandedId: string | null;
   onToggleExpand: (id: string) => void;
   onSelect: (view: CameraView) => void;
 }) {
-  const { stream, connecting, error } = useWebRTC(view.camera.camera_id);
+  const staggerMs = gridIndex * 100;
+  const { stream, connecting, error } = useWebRTC(view.camera.camera_id, staggerMs);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamState = useStreamState();
@@ -836,7 +832,7 @@ function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 3000) {
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 2000;
 
-function useWebRTC(cameraId: string) {
+function useWebRTC(cameraId: string, staggerMs: number = 0) {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -935,12 +931,15 @@ function useWebRTC(cameraId: string) {
   useEffect(() => {
     mountedRef.current = true;
     retryCountRef.current = 0;
-    void connect();
+    const timer = setTimeout(() => {
+      if (mountedRef.current) void connect();
+    }, staggerMs);
     return () => {
       mountedRef.current = false;
+      clearTimeout(timer);
       closeCurrentPeer();
     };
-  }, [connect, closeCurrentPeer]);
+  }, [connect, closeCurrentPeer, staggerMs]);
 
   const disconnect = useCallback(() => {
     mountedRef.current = false;
