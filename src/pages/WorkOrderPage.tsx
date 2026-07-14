@@ -389,6 +389,48 @@ export function WorkOrderPage() {
   }, [orders]);
   const selectedOrder = filteredOrders.find((order) => order.work_order_id === selectedId) ?? filteredOrders[0] ?? null;
 
+  const quickPrompts = useMemo(() => {
+    if (!selectedOrder) {
+      return [
+        { label: "查看统计", text: "查看当前工单统计概况" },
+        { label: "查询人员", text: "查询当前可派发人员" },
+        { label: "法规检索", text: "交通事故现场处置有哪些规定？" },
+      ];
+    }
+    const prompts: Array<{ label: string; text: string }> = [];
+    const info = selectedOrder.accident_info;
+    const st = selectedOrder.status;
+    const level = selectedOrder.event_level;
+
+    if (st === "unassigned") {
+      prompts.push({ label: "派发给谁", text: `工单${selectedOrder.work_order_id}应该派发给谁？请先查询可派发人员再推荐` });
+      prompts.push({ label: "如何处置", text: `分析工单${selectedOrder.work_order_id}的${info}事故，给出处置建议` });
+      if (level === "high") {
+        prompts.push({ label: "风险分析", text: `为什么工单${selectedOrder.work_order_id}被判定为高风险？分析事故类型和现场情况` });
+      } else {
+        prompts.push({ label: "批量预演", text: `预演批量分配结果，不要修改数据库` });
+      }
+    } else if (st === "pending") {
+      prompts.push({ label: "处置建议", text: `工单${selectedOrder.work_order_id}当前待处理，分析${info}并给出处置步骤` });
+      prompts.push({ label: "法规依据", text: `检索${info}事故相关的交通法规和处理标准` });
+      prompts.push({ label: "升级条件", text: `工单${selectedOrder.work_order_id}什么情况下需要升级处理？` });
+    } else if (st === "processing") {
+      prompts.push({ label: "进展评估", text: `评估工单${selectedOrder.work_order_id}的处置进展，是否需要协调资源？` });
+      prompts.push({ label: "结案标准", text: `工单${selectedOrder.work_order_id}达到什么条件可以结案？` });
+      if (level === "high") {
+        prompts.push({ label: "风险追踪", text: `工单${selectedOrder.work_order_id}高风险${info}事故，当前处置措施是否充分？` });
+      } else {
+        prompts.push({ label: "案例参考", text: `是否有与工单${selectedOrder.work_order_id}类似的${info}处置案例？` });
+      }
+    } else {
+      prompts.push({ label: "工单复盘", text: `复盘工单${selectedOrder.work_order_id}的${info}处置过程，总结经验` });
+      prompts.push({ label: "统计概况", text: "查看当前工单整体统计概况" });
+      prompts.push({ label: "法规检索", text: `检索${info}相关交通法规` });
+    }
+
+    return prompts;
+  }, [selectedOrder]);
+
   useEffect(() => {
     const nextSelectedId = selectedOrder?.work_order_id ?? "";
     if (nextSelectedId !== selectedId) {
@@ -729,8 +771,8 @@ export function WorkOrderPage() {
           </div>
         ) : null}
         <div className="quick-prompts">
-          {["如何处理该事故？", "建议派发给谁？", "为什么是高风险？"].map((question) => (
-            <button key={question} disabled={isAgentReplying} onClick={() => void askAgent(question)}>{question}</button>
+          {quickPrompts.map((item) => (
+            <button key={item.label} disabled={isAgentReplying} onClick={() => void askAgent(item.text)}>{item.label}</button>
           ))}
         </div>
         <div ref={agentMessagesRef} className="agent-messages" aria-live="polite">
