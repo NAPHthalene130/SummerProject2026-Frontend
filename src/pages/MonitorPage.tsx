@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CameraPoint, RoadSegment } from "../data/standardRoadNetwork";
 import { useDataMode } from "../context/DataModeContext";
+import { useStreamState } from "../context/StreamContext";
 import { useScenarioPlayback } from "../hooks/useScenarioPlayback";
 import type { TrafficEvent } from "../types/business";
 import { getRiskColor, getRiskText, getTrafficFlowColor } from "../utils/riskStyle";
@@ -38,25 +39,43 @@ function backendCameraToView(camera: BackendCamera, index: number): CameraView {
   };
 }
 
+const CACHE_KEY = "monitor_cameras";
+
+function getCached(): BackendCamera[] | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function setCached(cams: BackendCamera[]) {
+  try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(cams)); } catch {}
+}
+
 export function MonitorPage() {
   const scenario = useScenarioPlayback();
   const { demoDataEnabled } = useDataMode();
+  const streamState = useStreamState();
   const [page, setPage] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [activeCamera, setActiveCamera] = useState<CameraView | null>(null);
 
-  const [backendCameras, setBackendCameras] = useState<BackendCamera[]>([]);
-  const [backendLoading, setBackendLoading] = useState(false);
+  const cached = getCached();
+  const [backendCameras, setBackendCameras] = useState<BackendCamera[]>(cached || []);
+  const [backendLoading, setBackendLoading] = useState(cached ? false : true);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [vehicleCountMap, setVehicleCountMap] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (demoDataEnabled) {
+      setCached([]);
       setBackendCameras([]);
       setBackendError(null);
       setVehicleCountMap({});
       return;
     }
+
+    if (getCached()) return;
 
     let cancelled = false;
     setBackendLoading(true);
@@ -64,6 +83,7 @@ export function MonitorPage() {
 
     fetchCameras()
       .then((cameras) => {
+        setCached(cameras);
         if (!cancelled) {
           setBackendCameras(cameras);
           setPage(0);
@@ -139,6 +159,11 @@ export function MonitorPage() {
     ["风险", wallStats.risk, "#FF6D01"],
     ["事故", wallStats.danger, "#EA4335"],
   ] as const;
+
+  const totalVehicles = demoDataEnabled ? 0 : Object.values(streamState.boxes).reduce((s, b) => s + b.length, 0);
+  const allTraffic = demoDataEnabled ? [] : Object.values(streamState.traffic);
+  const totalEntry = allTraffic.reduce((s, t) => s + (t.entry_count || 0), 0);
+  const totalExit = allTraffic.reduce((s, t) => s + (t.exit_count || 0), 0);
 
   const isBackendEmpty = !demoDataEnabled && !backendLoading && !backendError && backendCameras.length === 0;
 
@@ -255,12 +280,12 @@ export function MonitorPage() {
 
             <MonitorTelemetryRail
               side="right"
-              kicker="ALARM"
-              title="预警与工况"
+              kicker="STATS"
+              title="实时状态"
               metrics={[
-                { label: "事故告警", value: "0", unit: "起", tone: "#ff8a80" },
-                { label: "高风险", value: "0", unit: "处", tone: "#ffb74d" },
-                { label: "接入状态", value: "READY", unit: "WebRTC", tone: "#81c784" },
+                { label: "识别车辆", value: String(totalVehicles), unit: " 辆", tone: "#72d4ff" },
+                { label: "总驶入", value: String(totalEntry), unit: "辆", tone: "#4CAF50" },
+                { label: "总驶出", value: String(totalExit), unit: "辆", tone: "#FF9800" },
               ]}
               distribution={[]}
             />
@@ -380,6 +405,8 @@ function WebRTCTile({
 }) {
   const { stream, connecting, error, connect, disconnect } = useWebRTC(view.camera.camera_id);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const streamState = useStreamState();
+  const trafficFlow = streamState.traffic[view.camera.camera_id] || null;
 
   useEffect(() => {
     connect();
@@ -445,8 +472,9 @@ function WebRTCTile({
         ) : (
           <>
             <span>识别车辆 {vehicleCount}</span>
-            <span>经度 {view.camera.lng.toFixed(4)}</span>
-            <span>纬度 {view.camera.lat.toFixed(4)}</span>
+            <span>驶入 {trafficFlow?.entry_count ?? "-"}</span>
+            <span>驶出 {trafficFlow?.exit_count ?? "-"}</span>
+            <span>车流 {trafficFlow?.flow_per_min ?? "-"}/min</span>
           </>
         )}
         <button onClick={() => onToggleExpand(view.camera.camera_id)}>详情</button>
