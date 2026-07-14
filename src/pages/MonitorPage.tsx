@@ -7,6 +7,12 @@ import type { TrafficEvent } from "../types/business";
 import { getRiskColor, getRiskText, getTrafficFlowColor } from "../utils/riskStyle";
 import { fetchCameras, fetchCameraStats, postLiveOffer, type BackendCamera } from "../api/client";
 
+// 前端 canvas 画检测框用的颜色
+const DETECTION_COLORS = [
+  "#00ff88", "#00ccff", "#ffcc00", "#ff6600",
+  "#ff0066", "#aa00ff", "#00ffaa", "#ffff00",
+];
+
 interface CameraView {
   camera: CameraPoint;
   segment: RoadSegment | null;
@@ -405,8 +411,10 @@ function WebRTCTile({
 }) {
   const { stream, connecting, error, connect, disconnect } = useWebRTC(view.camera.camera_id);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamState = useStreamState();
   const trafficFlow = streamState.traffic[view.camera.camera_id] || null;
+  const boxes = streamState.boxes[view.camera.camera_id] || [];
 
   useEffect(() => {
     connect();
@@ -418,6 +426,33 @@ function WebRTCTile({
       videoRef.current.srcObject = stream;
     }
   }, [stream]);
+
+  // 前端 canvas 异步画检测框（与视频播放解耦，按 SSE 频率更新）
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    if (!canvas || !video) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const w = video.videoWidth || 640;
+    const h = video.videoHeight || 480;
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+
+    ctx.clearRect(0, 0, w, h);
+    for (const box of boxes) {
+      const [x1, y1, x2, y2] = box.bbox;
+      const tid = box.track_id;
+      const color = DETECTION_COLORS[tid % DETECTION_COLORS.length];
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      ctx.fillStyle = color;
+      ctx.font = "12px monospace";
+      ctx.fillText(`${box.class_name} #${tid}`, x1, Math.max(y1 - 4, 10));
+    }
+  }, [boxes]);
 
   const hasSegment = view.segment !== null;
   const statusText = hasSegment ? getRiskText(view.segment!.status) : "在线";
@@ -448,13 +483,20 @@ function WebRTCTile({
             <span style={{ color: "#ff8a80" }}>连接失败</span>
           </div>
         ) : stream ? (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="monitor-live-video"
-          />
+          <>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="monitor-live-video"
+            />
+            <canvas
+              ref={canvasRef}
+              className="monitor-detection-canvas"
+              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" }}
+            />
+          </>
         ) : null}
         <div className="video-caption">
           <b>{view.camera.name}</b>
