@@ -71,6 +71,7 @@ export function HomePage() {
   const [controlOpen, setControlOpen] = useState(false);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [cameraRisks, setCameraRisks] = useState<Record<string, number>>({});
+  const [rawCameraRisks, setRawCameraRisks] = useState<Record<string, number>>({});
   const [predictionData, setPredictionData] = useState<RoadRiskPredictionResponse | null>(null);
   const [predictionLoading, setPredictionLoading] = useState(false);
   const [predictionError, setPredictionError] = useState<string | null>(null);
@@ -158,6 +159,7 @@ export function HomePage() {
   useEffect(() => {
     if (demoDataEnabled) {
       setCameraRisks({});
+      setRawCameraRisks({});
       return;
     }
     let cancelled = false;
@@ -167,6 +169,7 @@ export function HomePage() {
         .then((data) => {
           if (cancelled) return;
           const raw = data.camera_risks;
+          setRawCameraRisks(raw);
           const values = Object.values(raw);
           if (values.length === 0) return;
           const min = Math.min(...values);
@@ -245,7 +248,7 @@ export function HomePage() {
           segment={selectedSegment}
           mode={mode}
           cameras={cameras}
-          cameraRisks={cameraRisks}
+          cameraRisks={rawCameraRisks}
           prediction={selectedPrediction}
           predictionData={predictionData}
           predictionLoading={predictionLoading}
@@ -428,14 +431,6 @@ function normalizeCamId(id: string): string {
 function normalizeCameraId(id: string): string {
   const m = id.replace(/_/g, "-").match(/^(?:C|cam-?)0*(\d+)$/i);
   return m ? `cam-${String(Number(m[1])).padStart(2, "0")}` : id;
-}
-
-// 实时风险（归一化 0-1 值）→ 风险等级文本。供左侧列表 label 与右侧详情共用，保证一致。
-function realtimeRiskToText(score: number): string {
-  if (score <= 0.25) return "正常";
-  if (score <= 0.5) return "繁忙";
-  if (score <= 0.75) return "高风险";
-  return "危险";
 }
 
 function segAvgRisk(seg: RoadSegment, cameraRisks: Record<string, number>): number {
@@ -784,13 +779,14 @@ function SelectedRoadPopup({
   recentEvent: string;
   onClose: () => void;
 }) {
+  const nid = (id: string) => { const m = id.match(/^cam[-_](\d+)$/i); return m ? `C${String(Number(m[1])).padStart(2, "0")}` : id; };
   const camIds = segment.camera_ids.map(normalizeCameraId);
   const segTraffic = camIds.map(id => roadTraffic[id] || {}).filter((t: any) => t.total_vehicle_count !== undefined);
   const realFlow = segTraffic.length > 0 ? Math.round(segTraffic.reduce((s: number, t: any) => s + (t.flow_per_min || 0), 0)) : segment.traffic_flow;
   const realSpeed = segTraffic.length > 0 ? Math.round(segTraffic.reduce((s: number, t: any) => s + (t.avg_speed || 0), 0) / segTraffic.length) : segment.avg_speed;
   const segCameras = cameras.filter((c) => segment.camera_ids.includes(c.camera_id));
   const cameraRiskDetails = segCameras.flatMap((camera) => {
-    const risk = cameraRisks[normalizeCamId(camera.camera_id)] ?? cameraRisks[camera.camera_id];
+    const risk = cameraRisks[nid(camera.camera_id)] ?? cameraRisks[camera.camera_id];
     return risk === undefined ? [] : [{ camera, risk }];
   });
   const lstmRisk = cameraRiskDetails.length > 0
@@ -802,6 +798,13 @@ function SelectedRoadPopup({
     if (score < 0.3) return "低风险";
     if (score < 0.5) return "中风险";
     return "高风险";
+  };
+
+  const realtimeRiskToText = (score: number) => {
+    if (score <= 0.25) return "正常";
+    if (score <= 0.5) return "繁忙";
+    if (score <= 0.75) return "高风险";
+    return "危险";
   };
 
   return (
@@ -845,17 +848,11 @@ function SelectedRoadPopup({
           </>
         ) : null}
         <span>风险等级</span>
-        <b style={{
-          color: mode === "prediction" && prediction
-            ? predictionRiskColor(prediction.risk_score)
-            : mode === "realtime"
-              ? lstmRisk !== null ? riskToColor(lstmRisk) : "#95a5a6"
-              : "#95a5a6"
-        }}>
+        <b>
           {mode === "prediction" && prediction
             ? predictionRiskToText(prediction.risk_score)
-            : mode === "realtime"
-              ? lstmRisk !== null ? realtimeRiskToText(lstmRisk) : "等待数据"
+            : mode === "realtime" && lstmRisk !== null
+              ? realtimeRiskToText(lstmRisk)
               : getRiskText(segment.status)}
         </b>
         <span>关联摄像头</span><b>{segCameras.length ? segCameras.map((c) => c.name).join("、") : "无"}</b>
