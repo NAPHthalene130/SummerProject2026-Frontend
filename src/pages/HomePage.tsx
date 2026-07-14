@@ -113,11 +113,11 @@ export function HomePage() {
   }, [selectedSegmentId]);
 
   useEffect(() => {
-    if (demoDataEnabled || mode !== "prediction" || segments.length === 0) return;
+    if (demoDataEnabled || mode !== "prediction" || rawSegments.length === 0) return;
     let cancelled = false;
     let timeoutId: number | null = null;
 
-    const inputs: RoadRiskPredictionInput[] = segments.map((segment) => {
+    const inputs: RoadRiskPredictionInput[] = rawSegments.map((segment) => {
       const point = segmentMidpoint(segment, nodes);
       return {
         segment_id: segment.segment_id,
@@ -154,7 +154,7 @@ export function HomePage() {
       cancelled = true;
       if (timeoutId !== null) window.clearTimeout(timeoutId);
     };
-  }, [demoDataEnabled, mode, nodes, segments]);
+  }, [demoDataEnabled, mode]);
 
   useEffect(() => {
     if (demoDataEnabled) {
@@ -417,7 +417,7 @@ function getDynamicRoadCondition(prediction: RoadRiskPrediction | null, segment:
     status,
     currentSpeed,
     congestionIndex,
-    source: detectedSpeed != null ? "YOLO 车辆轨迹推算" : "路段实时数据推算",
+    source: detectedSpeed != null ? "15 分钟车辆轨迹窗口" : "道路历史基线",
   };
 }
 
@@ -832,15 +832,18 @@ function SelectedRoadPopup({
             <b style={{ color: prediction ? predictionRiskColor(prediction.risk_score) : "#95a5a6" }}>
               {prediction ? `${(prediction.risk_score * 100).toFixed(1)}%` : predictionLoading ? "预测中…" : "暂无预测"}
             </b>
-            <span>预测时域</span><b>{predictionData?.forecast_minutes ?? 15} 分钟</b>
+            <span>预测时域</span><b>未来 {predictionData?.forecast_minutes ?? 15} 分钟</b>
+            <span>日期时段</span>
+            <b>{predictionData ? `${predictionData.date_context.date} ${predictionData.date_context.weekday} / ${predictionData.date_context.period}` : "计算中"}</b>
             <span>天气</span>
             <b>{predictionData ? `${predictionData.weather.temperature_2m.toFixed(1)}℃ / 湿度 ${predictionData.weather.relative_humidity_2m.toFixed(0)}%` : "采集中"}</b>
-            <span>YOLO 车辆</span><b>{prediction?.vehicle.vehicle_count ?? 0} 辆</b>
-            <span>YOLO 均速</span><b>{prediction?.vehicle.avg_speed_kmh != null ? `${prediction.vehicle.avg_speed_kmh.toFixed(1)} km/h` : "等待轨迹"}</b>
+            <span>15 分钟累计车流</span><b>{prediction?.vehicle.window_vehicle_count ?? 0} 辆</b>
+            <span>历史同时段基线</span>
+            <b>{prediction ? `${prediction.vehicle.historical_baseline_count} 辆 / ${prediction.vehicle.flow_comparison} ${Math.abs(prediction.vehicle.flow_change_percent).toFixed(1)}%` : "计算中"}</b>
+            <span>15 分钟平均速度</span><b>{prediction?.vehicle.avg_speed_kmh != null ? `${prediction.vehicle.avg_speed_kmh.toFixed(1)} km/h` : "等待窗口数据"}</b>
             <span>联网道路</span><b>{prediction?.road.display_name || prediction?.road.name || segment.name}</b>
             <span>道路情况</span><b>{formatRoadCondition(prediction, segment)}</b>
             <span>通行状态</span><b>{dynamicRoad.status}</b>
-            <span>路况速度</span><b>{dynamicRoad.currentSpeed > 0 ? `${dynamicRoad.currentSpeed.toFixed(1)} km/h` : "暂无数据"}</b>
             <span>拥堵指数</span><b>{dynamicRoad.congestionIndex != null ? dynamicRoad.congestionIndex.toFixed(2) : "暂无数据"}</b>
             <span>交通事件</span><b>{(prediction?.vehicle.active_incidents ?? 0) > 0 ? `${prediction?.vehicle.active_incidents} 起` : "暂未检测到"}</b>
             <span>路况来源</span><b>{dynamicRoad.source}</b>
