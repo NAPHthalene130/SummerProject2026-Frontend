@@ -980,7 +980,6 @@ function OrderDetailModal({
         ) : (
           <div className="detail-actions">
             <button onClick={onAssign}>派发</button>
-            <button onClick={() => onUpdate({ status: "processing" })}>开始处置</button>
             <button onClick={() => onUpdate({ status: "completed", work_order_status: 1, completed_at: new Date().toLocaleString("zh-CN", { hour12: false }), process_message: "现场处置完成，道路恢复观察。", process_images: ["https://placehold.co/640x360/263d32/f4f8ff?text=Completed"] })}>标记已完成</button>
             <button className="ignore-order-button" onClick={() => onUpdate({ status: "ignored", work_order_status: 2, completed_at: new Date().toLocaleString("zh-CN", { hour12: false }), process_message: "该工单已忽略。" })}>忽略工单</button>
           </div>
