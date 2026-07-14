@@ -338,9 +338,7 @@ function MapAssetDock({
               : hasRisk ? riskToColor(risk) : GRAY;
           const label = mode === "traffic"
             ? String(segment.traffic_flow)
-            : mode === "realtime"
-              ? hasRisk ? realtimeRiskToText(risk) : "等待数据"
-              : hasRisk ? `${(risk * 100).toFixed(0)}%` : "等待数据";
+            : hasRisk ? `${(risk * 100).toFixed(0)}%` : "等待数据";
           return (
             <button
               key={segment.segment_id}
