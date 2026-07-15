@@ -389,6 +389,48 @@ export function WorkOrderPage() {
   }, [orders]);
   const selectedOrder = filteredOrders.find((order) => order.work_order_id === selectedId) ?? filteredOrders[0] ?? null;
 
+  const quickPrompts = useMemo(() => {
+    if (!selectedOrder) {
+      return [
+        { label: "查看统计", text: "查看当前工单统计概况" },
+        { label: "查询人员", text: "查询当前可派发人员" },
+        { label: "法规检索", text: "交通事故现场处置有哪些规定？" },
+      ];
+    }
+    const prompts: Array<{ label: string; text: string }> = [];
+    const info = selectedOrder.accident_info;
+    const st = selectedOrder.status;
+    const level = selectedOrder.event_level;
+
+    if (st === "unassigned") {
+      prompts.push({ label: "派发给谁", text: `工单${selectedOrder.work_order_id}应该派发给谁？请先查询可派发人员再推荐` });
+      prompts.push({ label: "如何处置", text: `分析工单${selectedOrder.work_order_id}的${info}事故，给出处置建议` });
+      if (level === "high") {
+        prompts.push({ label: "风险分析", text: `为什么工单${selectedOrder.work_order_id}被判定为高风险？分析事故类型和现场情况` });
+      } else {
+        prompts.push({ label: "批量预演", text: `预演批量分配结果，不要修改数据库` });
+      }
+    } else if (st === "pending") {
+      prompts.push({ label: "处置建议", text: `工单${selectedOrder.work_order_id}当前待处理，分析${info}并给出处置步骤` });
+      prompts.push({ label: "法规依据", text: `检索${info}事故相关的交通法规和处理标准` });
+      prompts.push({ label: "升级条件", text: `工单${selectedOrder.work_order_id}什么情况下需要升级处理？` });
+    } else if (st === "processing") {
+      prompts.push({ label: "进展评估", text: `评估工单${selectedOrder.work_order_id}的处置进展，是否需要协调资源？` });
+      prompts.push({ label: "结案标准", text: `工单${selectedOrder.work_order_id}达到什么条件可以结案？` });
+      if (level === "high") {
+        prompts.push({ label: "风险追踪", text: `工单${selectedOrder.work_order_id}高风险${info}事故，当前处置措施是否充分？` });
+      } else {
+        prompts.push({ label: "案例参考", text: `是否有与工单${selectedOrder.work_order_id}类似的${info}处置案例？` });
+      }
+    } else {
+      prompts.push({ label: "工单复盘", text: `复盘工单${selectedOrder.work_order_id}的${info}处置过程，总结经验` });
+      prompts.push({ label: "统计概况", text: "查看当前工单整体统计概况" });
+      prompts.push({ label: "法规检索", text: `检索${info}相关交通法规` });
+    }
+
+    return prompts;
+  }, [selectedOrder]);
+
   useEffect(() => {
     const nextSelectedId = selectedOrder?.work_order_id ?? "";
     if (nextSelectedId !== selectedId) {
@@ -669,7 +711,7 @@ export function WorkOrderPage() {
                     <span>等级 {getLevelText(order.event_level)}</span>
                     <span>摄像头 {order.camera_name}</span>
                     <span>派发 {order.assignee ?? "未派发"}</span>
-                    <span className="category-badge">要求 {categoryName(order.required_category)}</span>
+                    <span className="category-badge">建议 {categoryName(order.required_category)}</span>
                   </div>
                   <div className="row-actions">
                     {order.status === "unassigned" ? <button onClick={(event) => { event.stopPropagation(); setAssignOrder(order); }}>派发</button> : null}
@@ -729,8 +771,8 @@ export function WorkOrderPage() {
           </div>
         ) : null}
         <div className="quick-prompts">
-          {["如何处理该事故？", "建议派发给谁？", "为什么是高风险？"].map((question) => (
-            <button key={question} disabled={isAgentReplying} onClick={() => void askAgent(question)}>{question}</button>
+          {quickPrompts.map((item) => (
+            <button key={item.label} disabled={isAgentReplying} onClick={() => void askAgent(item.text)}>{item.label}</button>
           ))}
         </div>
         <div ref={agentMessagesRef} className="agent-messages" aria-live="polite">
@@ -845,7 +887,7 @@ function AssignDialog({
   onClose: () => void;
   onConfirm: (staff: StaffMember) => void;
 }) {
-  const matchedStaff = staffMembers.filter((staff) => !order.required_category || staff.personnel_category === order.required_category);
+  const matchedStaff = staffMembers;
   const defaultStaff = matchedStaff.find((staff) => staff.status === "idle") ?? matchedStaff[0] ?? null;
   const [staffId, setStaffId] = useState(defaultStaff?.id ?? "");
   const selectedStaff = matchedStaff.find((staff) => staff.id === staffId) ?? null;
@@ -855,14 +897,14 @@ function AssignDialog({
       <div className="assign-dialog" onClick={(event) => event.stopPropagation()}>
         <h2>派发工单</h2>
         <p>{order.work_order_id} · {order.accident_info}</p>
-        <p className="assignment-requirement">要求人员类别：<b>{categoryName(order.required_category)}</b></p>
+        <p className="assignment-requirement">建议人员类别：<b>{categoryName(order.required_category)}</b></p>
         <label>
           选择处理人员
           <select value={staffId} onChange={(event) => setStaffId(event.target.value)}>
             {matchedStaff.map((staff) => <option key={staff.id} value={staff.id}>{staff.name} · {staff.role} · {staff.status === "idle" ? "空闲" : "忙碌"}</option>)}
           </select>
         </label>
-        {matchedStaff.length === 0 ? <p className="assignment-warning">当前没有注册为“{categoryName(order.required_category)}”的人员，无法派发。</p> : null}
+        {matchedStaff.length === 0 ? <p className="assignment-warning">暂无可用人员</p> : null}
         <div className="dialog-actions">
           <button disabled={!selectedStaff} onClick={() => selectedStaff && onConfirm(selectedStaff)}>确认派发</button>
           <button onClick={onClose}>取消</button>
@@ -980,7 +1022,6 @@ function OrderDetailModal({
         ) : (
           <div className="detail-actions">
             <button onClick={onAssign}>派发</button>
-            <button onClick={() => onUpdate({ status: "processing" })}>开始处置</button>
             <button onClick={() => onUpdate({ status: "completed", work_order_status: 1, completed_at: new Date().toLocaleString("zh-CN", { hour12: false }), process_message: "现场处置完成，道路恢复观察。", process_images: ["https://placehold.co/640x360/263d32/f4f8ff?text=Completed"] })}>标记已完成</button>
             <button className="ignore-order-button" onClick={() => onUpdate({ status: "ignored", work_order_status: 2, completed_at: new Date().toLocaleString("zh-CN", { hour12: false }), process_message: "该工单已忽略。" })}>忽略工单</button>
           </div>

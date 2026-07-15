@@ -50,16 +50,28 @@ export interface RoadRiskPredictionInput {
   camera_ids: string[];
   traffic_flow: number;
   avg_speed: number;
+  historical_accidents_24h?: number;
+  historical_accidents_7d?: number;
 }
 
 export interface RoadRiskPrediction {
   segment_id: string;
   risk_score: number;
+  model_score: number;
   risk_level: "normal" | "busy" | "risk" | "danger";
   reason: string[];
   vehicle: {
     camera_ids: string[];
     vehicle_count: number;
+    instantaneous_vehicle_count: number;
+    cumulative_vehicle_count: number;
+    window_vehicle_count: number;
+    window_minutes: number;
+    observed_minutes: number;
+    flow_per_min: number;
+    historical_baseline_count: number;
+    flow_change_percent: number;
+    flow_comparison: "偏多" | "偏少" | "基本持平";
     avg_speed_kmh: number | null;
     active_incidents: number;
     source: string;
@@ -81,6 +93,14 @@ export interface RoadRiskPredictionResponse {
   generated_at: string;
   model: string;
   forecast_minutes: number;
+  aggregation_window_minutes: number;
+  date_context: {
+    date: string;
+    weekday: string;
+    weekday_index: number;
+    is_weekend: boolean;
+    period: string;
+  };
   weather: {
     temperature_2m: number;
     relative_humidity_2m: number;
@@ -202,6 +222,24 @@ export function postLiveOffer(cameraId: string, body: LiveOfferRequest): Promise
 
 export function fetchWorkOrders(): Promise<WorkOrderItem[]> {
   return request<WorkOrderItem[]>("/api/v1/work-orders/");
+}
+
+export interface CameraUnprocessedEvents {
+  camera_id: string;
+  camera_name: string;
+  events: WorkOrderItem[];
+}
+
+export interface UnprocessedResponse {
+  cameras: CameraUnprocessedEvents[];
+}
+
+export function fetchUnprocessedWorkOrders(): Promise<UnprocessedResponse> {
+  return request<UnprocessedResponse>("/api/v1/work-orders/unprocessed");
+}
+
+export function fetchWorkOrderDetail(workOrderId: string): Promise<WorkOrderItem> {
+  return request<WorkOrderItem>(`/api/v1/work-orders/detail/${encodeURIComponent(workOrderId)}`);
 }
 
 export function fetchStaff(): Promise<StaffMember[]> {
